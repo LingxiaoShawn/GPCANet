@@ -4,9 +4,6 @@ from data import load_data
 from models import GPCANet, GCN
 from utils import *
 
-# out dir 
-OUT_PATH = "results/"
-
 # inputs
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='arxiv', help='{cora, pubmed, citeseer, arxiv}.')
@@ -25,6 +22,9 @@ parser.add_argument('--freeze', action='store_true', default=False, help='Whethe
 parser.add_argument('--act', type=str, default='Identity', help='Activitation function in torch.nn')
 
 args = parser.parse_args()
+
+# out dir 
+OUT_PATH = "results/"
 if args.log == 'info':
     OUT_PATH = os.path.join(OUT_PATH, 'benchmarks')
 
@@ -36,7 +36,7 @@ description = f"D[{args.data}]-M[{args.model}]-h[{args.nhid}]" + \
 # create work space
 workspace = os.path.join(OUT_PATH, description)
 if not os.path.isdir(workspace):
-    os.mkdir(workspace)
+    os.makedirs(workspace)
     
 # save args into file to use later
 args_file = os.path.join(workspace, 'args.txt')

@@ -90,7 +90,7 @@ def gpca(data, nhid=64, nlayer=1, alpha=1., beta=0, act=nn.Identity()):
         # x += pre_x
     return x
 
-def power_method_with_beta(A, x, y, alpha=1, beta=0.1, t=50):
+def power_method_with_beta(A, x, y, alpha=1, beta=0.1, t=10):
     # here y should only include training labels, nxc one hot
     inv_phi_times_x = x
     yyt_normalizer = y.matmul(y.sum(dim=0).view(-1,1)) + 1e-6
