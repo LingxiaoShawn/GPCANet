@@ -83,8 +83,13 @@ def gpca(data, nhid=64, nlayer=1, alpha=1., beta=0, act=nn.Identity()):
         # pre_x = x
         inv_phi_times_x = power_method_with_beta(data.adj, x, y_train, alpha, beta)
         eig_val, eig_vec = torch.symeig(x.t().mm(inv_phi_times_x), eigenvectors=True)
-        #weight = eig_vec[:,-nhid:] #when nhid is large than previous hidden size, we need to sample some eigenvectors.
-        weight = torch.cat([eig_vec[:,-nhid//2:], -eig_vec[:,-nhid//2:]], dim=-1)
+        nin = x.size(-1)
+        if nin >= nhid:
+            weight = eig_vec[:,-nhid:] #when nhid is large than previous hidden size, we need to sample some eigenvectors.
+        else:
+            _, eig_vec_more = torch.symeig(x.t().mm(x), eigenvectors=True)
+            weight = torch.cat([eig_vec[:,-nhid//2:], eig_vec_more[:,-nhid//2:]], dim=-1)
+            
         x = inv_phi_times_x.mm(weight) 
         x = act(x)
         # x += pre_x
