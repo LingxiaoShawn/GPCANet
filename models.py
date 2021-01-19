@@ -115,9 +115,13 @@ class GPCALayer(nn.Module):
             A, x, y, train_mask = data.adj, data.x, data.y, data.train_mask
         
         # one hot encoding of training labels
-        train_idx = train_mask.nonzero(as_tuple=False).squeeze()
-        y_train = None if y is None else SparseTensor(row=train_idx, 
-                   col=y.squeeze()[train_idx], sparse_sizes=(n, c))
+        if not hasattr(data, 'y_train'):
+            train_idx = train_mask.nonzero(as_tuple=False).squeeze()
+            y_train = None if y is None else SparseTensor(row=train_idx, 
+                       col=y.squeeze()[train_idx], sparse_sizes=(n, c))
+            data.y_train = y_train
+        else:
+            y_train = data.y_train
         # center
         if self.center:
             x = x - x.mean(dim=0)
@@ -125,7 +129,7 @@ class GPCALayer(nn.Module):
         # calculate inverse of phi times x
         invphi_x = self.approximate_invphi_x(A, x, y_train)
         if return_invphi_x:
-            return invphi_x
+            return invphi_x, x
         else:     
             # AXW + bias
             return invphi_x.mm(self.weight) + self.bias
@@ -135,10 +139,7 @@ class GPCALayer(nn.Module):
         Init always use full batch, same as inference/test. 
         """
         with torch.no_grad():
-            x = full_data.x
-            if self.center:
-                x = x - x.mean(dim=0)
-            invphi_x = self.forward(full_data, True)
+            invphi_x, x = self.forward(full_data, True)
             eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
             if self.nhid <= 2*self.nin:
                 #weight = eig_vec[:, -self.nhid:] #when 
