@@ -41,7 +41,7 @@ def load_ogb_data(data_name, mode='DA'):
     
     # Convert split indices to boolean masks and add them to `data`.
     for key, idx in split_idx.items():
-        mask = torch.zeros(data.num_nodes, dtype=torch.bool)
+        mask = torch.zeros(graph.num_nodes, dtype=torch.bool)
         mask[idx] = True
         graph[f'{key}_mask'] = mask
     
