@@ -1,38 +1,68 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, SAGEConv
 
 from torch_sparse import SparseTensor
 
 class GCN(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, **kwargs):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, minibatch=False, **kwargs):
         super().__init__()
+        Conv = SAGEConv if minibatch else GCNConv
         self.convs = torch.nn.ModuleList()
-        self.bns = torch.nn.ModuleList()
         for i in range(nlayer):
-            self.convs.append(
-                GCNConv(nhid if i>0 else nfeat, nhid if i<nlayer-1 else nclass, cached=True))
-            self.bns.append(torch.nn.BatchNorm1d(nhid))
+            self.convs.append(Conv(nhid if i>0 else nfeat, 
+                                   nhid if i<nlayer-1 else nclass, cached=True))
         self.dropout = dropout
 
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
 
     def forward(self, data, **kwargs):
-        x, adj = data.x, data.edge_index
+        # here can also do full batch, if gpu is not big enough, use cpu
+        x, edge_index = data.x, data.edge_index
         for i, conv in enumerate(self.convs[:-1]):
-            x = conv(x, adj)
-            # x = self.bns[i](x)
+            x = conv(x, edge_index)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.convs[-1](x, adj)
+        x = self.convs[-1](x, edge_index)
         return x
-
     
+    def inference(self, x_all, subgraph_loader, device, **kwargs):
+        # here use sampling to achieve efficient full batch
+        self.eval()
+        with torch.no_grad():
+            for i, conv in enumerate(self.convs):
+                xs = []
+                for batch_size, n_id, adj in subgraph_loader:
+                    edge_index, _, size = adj.to(device)
+                    x = x_all[n_id].to(device)
+                    x_target = x[:size[1]]
+                    x = conv((x, x_target), edge_index)
+                    if i != len(self.convs) - 1:
+                        x = F.relu(x)
+                    xs.append(x.cpu())
+                x_all = torch.cat(xs, dim=0)
+        return x_all # cpu version
+    
+    def init(self, full_data):
+        """
+        Similar init used before. 
+        SAGECOnv is hard to init, the formulation is different. 
+        """
+        self.eval()
+        with torch.no_grad():
+            pass
+    
+def to_normalized_sparsetensor(edge_index, N, mode='DA'):
+    adj = SparseTensor(row=edge_index.row, col=edge_index.col, sparse_sizes=(N, N))
+    adj = adj.set_diag()
+    deg = adj.sum(dim=1).to(torch.float)
+    deg_inv_sqrt = deg.pow(-1)
+    deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+    return deg_inv_sqrt.view(-1,1)*adj
+
 class GPCALayer(nn.Module):
     def __init__(self, nin, nout, alpha, beta, center=True, n_powers=50):
         super().__init__()
@@ -72,14 +102,20 @@ class GPCALayer(nn.Module):
         nn.init.xavier_uniform_(self.weight)
         nn.init.constant_(self.bias, 0) 
 
-    def forward(self, data, return_invphi_x=False):
+    def forward(self, data, return_invphi_x=False, minibatch=False):
         """
             Assume data.adj is SparseTensor and normalized
         """
         # inputs
-        A, x, y, train_idx = data.adj, data.x, data.y, data.train_idx
-        n, c = data.num_nodes, data.num_classes
+        n, c = data.x.size(0), data.num_classes
+        if minibatch:
+            edge_index, x, y, train_mask = data.edge_index, data.x, data.y, data.train_mask
+            A = to_normalized_sparsetensor(edge_index, n)
+        else:    
+            A, x, y, train_mask = data.adj, data.x, data.y, data.train_mask
+        
         # one hot encoding of training labels
+        train_idx = train_mask.nonzero(as_tuple=False).squeeze()
         y_train = None if y is None else SparseTensor(row=train_idx, 
                    col=y.squeeze()[train_idx], sparse_sizes=(n, c))
         # center
@@ -94,12 +130,14 @@ class GPCALayer(nn.Module):
             # AXW + bias
             return invphi_x.mm(self.weight) + self.bias
     
-    def init(self, data):
+    def init(self, full_data):
         """
-        Later need considering init the network batch-wise
+        Init always use full batch, same as inference/test. 
         """
-        x = data.x
-        invphi_x = self.forward(data, True)
+        x = full_data.x
+        if self.center:
+            x = x - x.mean(dim=0)
+        invphi_x = self.forward(full_data, True)
         eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
         if self.nhid <= 2*self.nin:
             #weight = eig_vec[:, -self.nhid:] #when 
@@ -112,11 +150,12 @@ class GPCALayer(nn.Module):
             raise ValueError('Larger hidden size is not supported yet.')
         
         # assign 
-        self.weight.data = weight
-                 
+        self.weight.data = weight        
+        
 class GPCANet(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, alpha, beta, 
-                 dropout=0, n_powers=10, center=True, act='Identity', **kwargs):
+                 dropout=0, n_powers=10, center=True, act='Identity', 
+                 minibatch=False, **kwargs):
         super().__init__()
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
@@ -128,6 +167,7 @@ class GPCANet(nn.Module):
         self.relu = getattr(nn,act)()
         self.cache = None # cannot be used when use batch training
         self.freeze_status = False
+        self.minibatch = minibatch
     
     def freeze(self, requires_grad=False):
         self.freeze_status = not requires_grad
@@ -136,17 +176,21 @@ class GPCANet(nn.Module):
              
     def forward(self, data, use_cache=False):
         # inputs
-        A, x, y, train_idx = data.adj, data.x, data.y, data.train_idx
-        n, c = data.num_nodes, data.num_classes
+#         A, x, y, train_mask = data.adj, data.x, data.y, data.train_mask
+#         n, c = data.num_nodes, data.num_classes
+        use_cache = False if self.minibatch
         original_x = x
         
         if self.freeze_status and use_cache and self.cache is not None:
             return self.out_mlp(self.cache)
         
         for i, conv in enumerate(self.convs):
-            x = conv(data)
+#             pre_x = x
+            x = conv(data, minibatch=self.minibatch)
             x = self.relu(x)
             x = self.dropout(x)
+#             if pre_x.shape() == x.shape():
+#                 x += pre_x
             data.x = x
         self.cache = data.x
 
@@ -155,16 +199,38 @@ class GPCANet(nn.Module):
 
         return out
     
-    def init(self, data):
+    def inference(self, full_data):
+        self.eval()
+        with torch.no_grad():
+            original_x = full_data.x
+            for i, conv in enumerate(self.convs):
+                x = conv(full_data)
+                x = self.relu(x)
+                x = self.dropout(x)
+                full_data.x = x
+            out = self.out_mlp(full_data.x)
+            full_data.x = original_x
+        return out
+        
+    def init(self, full_data):
         """
-        Later need considering init the network batch-wise
+        Init always use full batch, same as inference/test. 
+        Btw, should we increase the scale of weight based on relu scale?
+        Think about this later. 
         """
-        original_x = data.x
-        for i, conv in enumerate(self.convs):
-            conv.init(data) # init using GPCA
-            x = conv(data)
-            x = self.relu(x)
-            x = self.dropout(x)
-            data.x = x
-        data.x = original_x # restore 
+        self.eval()
+        with torch.no_grad():
+            original_x = full_data.x
+            x = full_data.x
+            for i, conv in enumerate(self.convs):
+#                 pre_x = x
+                conv.init(full_data) # init using GPCA
+                x = conv(full_data)
+                #----- init without relu and dropout?
+#                 x = self.relu(x) 
+#                 x = self.dropout(x)
+#                 if pre_x.shape() == x.shape():
+#                     x += pre_x
+                full_data.x = x
+            full_data.x = original_x # restore 
         

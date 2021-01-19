@@ -2,8 +2,8 @@ def train(net, optimizer, criterion, data):
     net.train()
     optimizer.zero_grad()
     output = net(data, use_cache=True) # for GPCA training
-    loss = criterion(output[data.train_idx], data.y[data.train_idx])
-    acc = accuracy(output[data.train_idx], data.y[data.train_idx])
+    loss = criterion(output[data.train_mask], data.y[data.train_mask])
+    acc = accuracy(output[data.train_mask], data.y[data.train_mask])
     loss.backward()
     optimizer.step()
     return loss.item(), acc.item()
@@ -11,9 +11,9 @@ def train(net, optimizer, criterion, data):
 def evalulate(net, criterion, data):
     net.eval()
     output = net(data, use_cache=True)
-    train_acc = accuracy(output[data.train_idx], data.y[data.train_idx])
-    val_acc = accuracy(output[data.valid_idx], data.y[data.valid_idx])
-    test_acc = accuracy(output[data.test_idx], data.y[data.test_idx])
+    train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
+    val_acc = accuracy(output[data.valid_mask], data.y[data.valid_mask])
+    test_acc = accuracy(output[data.test_mask], data.y[data.test_mask])
     return train_acc.item(), val_acc.item(), test_acc.item()
 
 # def val(net, criterion, data):

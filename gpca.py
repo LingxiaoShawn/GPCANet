@@ -32,9 +32,9 @@ class GPCA:
         gpca_embeddings = gpca(data.to(device), self.nhid, self.nlayer, self.alpha, self.beta, self.act).to('cpu')
         data = data.to('cpu')
         # step 1: create dataloader 
-        train_dataset = TabularDataset(gpca_embeddings[data.train_idx], data.y[data.train_idx])
-        valid_dataset = TabularDataset(gpca_embeddings[data.valid_idx], data.y[data.valid_idx])
-        test_dataset = TabularDataset(gpca_embeddings[data.test_idx], data.y[data.test_idx])
+        train_dataset = TabularDataset(gpca_embeddings[data.train_mask], data.y[data.train_mask])
+        valid_dataset = TabularDataset(gpca_embeddings[data.valid_mask], data.y[data.valid_mask])
+        test_dataset = TabularDataset(gpca_embeddings[data.test_mask], data.y[data.test_mask])
         nw = 6
         # DataLoader needs dataset in cpu when num_workers > 1
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=nw, pin_memory=True) 
@@ -74,25 +74,27 @@ def gpca(data, nhid=64, nlayer=1, alpha=1., beta=0, act=nn.Identity()):
     Output:
         x - new embeddings after gpca
     """
-    x = data.x    
-    y_train = SparseTensor(row=data.train_idx, col=data.y.squeeze()[data.train_idx], 
-                           sparse_sizes=(data.num_nodes, data.num_classes)) # one hot 
-    for _ in range(nlayer):
-        x = x - x.mean(dim=0)
-        # x = x / (x.std(dim=0)+1e-6) # standarize to test 
-        # pre_x = x
-        inv_phi_times_x = power_method_with_beta(data.adj, x, y_train, alpha, beta)
-        eig_val, eig_vec = torch.symeig(x.t().mm(inv_phi_times_x), eigenvectors=True)
-        nin = x.size(-1)
-        if nin >= nhid:
-            weight = eig_vec[:,-nhid:] #when nhid is large than previous hidden size, we need to sample some eigenvectors.
-        else:
-            _, eig_vec_more = torch.symeig(x.t().mm(x), eigenvectors=True)
-            weight = torch.cat([eig_vec[:,-nhid//2:], eig_vec_more[:,-nhid//2:]], dim=-1)
-            
-        x = inv_phi_times_x.mm(weight) 
-        x = act(x)
-        # x += pre_x
+    with torch.no_grad():
+        x = data.x    
+        y_train = SparseTensor(row=data.train_mask.nonzero(as_tuple=False).squeeze(), 
+                               col=data.y.squeeze()[data.train_mask], 
+                               sparse_sizes=(data.num_nodes, data.num_classes)) # one hot 
+        for _ in range(nlayer):
+            x = x - x.mean(dim=0)
+            # x = x / (x.std(dim=0)+1e-6) # standarize to test 
+            # pre_x = x
+            inv_phi_times_x = power_method_with_beta(data.adj, x, y_train, alpha, beta)
+            eig_val, eig_vec = torch.symeig(x.t().mm(inv_phi_times_x), eigenvectors=True)
+            nin = x.size(-1)
+            if nin >= nhid:
+                weight = eig_vec[:,-nhid:] #when nhid is large than previous hidden size, we need to sample some eigenvectors.
+            else:
+                _, eig_vec_more = torch.symeig(x.t().mm(x), eigenvectors=True)
+                weight = torch.cat([eig_vec[:,-nhid//2:], eig_vec_more[:,-nhid//2:]], dim=-1)
+
+            x = inv_phi_times_x.mm(weight) 
+            x = act(x)
+            # x += pre_x
     return x
 
 def power_method_with_beta(A, x, y, alpha=1, beta=0.1, t=10):
