@@ -134,23 +134,25 @@ class GPCALayer(nn.Module):
         """
         Init always use full batch, same as inference/test. 
         """
-        x = full_data.x
-        if self.center:
-            x = x - x.mean(dim=0)
-        invphi_x = self.forward(full_data, True)
-        eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
-        if self.nhid <= 2*self.nin:
-            #weight = eig_vec[:, -self.nhid:] #when 
-            weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
-        else:
-            # get more eigvectors
-            # 1. eigen of x.t times x
-            # 2. eigen of invphi_x.t times invphi_x
-            # 3. negative and positive eigenvectors for relu
-            raise ValueError('Larger hidden size is not supported yet.')
-        
-        # assign 
-        self.weight.data = weight        
+        with torch.no_grad():
+            x = full_data.x
+            if self.center:
+                x = x - x.mean(dim=0)
+            invphi_x = self.forward(full_data, True)
+            eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
+            if self.nhid <= 2*self.nin:
+                #weight = eig_vec[:, -self.nhid:] #when 
+                weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
+            else:
+                # get more eigvectors
+                # 1. eigen of x.t times x
+                # 2. eigen of invphi_x.t times invphi_x
+                # 3. negative and positive eigenvectors for relu
+                raise ValueError('Larger hidden size is not supported yet.')
+
+            # assign 
+            self.weight.data = weight
+        return invphi_x.mm(self.weight) + self.bias
         
 class GPCANet(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, alpha, beta, 
@@ -178,7 +180,8 @@ class GPCANet(nn.Module):
         # inputs
 #         A, x, y, train_mask = data.adj, data.x, data.y, data.train_mask
 #         n, c = data.num_nodes, data.num_classes
-        use_cache = False if self.minibatch
+        if self.minibatch:
+            use_cache = False
         original_x = x
         
         if self.freeze_status and use_cache and self.cache is not None:
@@ -221,16 +224,14 @@ class GPCANet(nn.Module):
         self.eval()
         with torch.no_grad():
             original_x = full_data.x
-            x = full_data.x
             for i, conv in enumerate(self.convs):
 #                 pre_x = x
-                conv.init(full_data) # init using GPCA
-                x = conv(full_data)
+                full_data.x = conv.init(full_data) # init using GPCA
                 #----- init without relu and dropout?
 #                 x = self.relu(x) 
 #                 x = self.dropout(x)
 #                 if pre_x.shape() == x.shape():
 #                     x += pre_x
-                full_data.x = x
+#                 full_data.x = x
             full_data.x = original_x # restore 
         

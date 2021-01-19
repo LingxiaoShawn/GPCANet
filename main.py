@@ -105,6 +105,8 @@ if args.model == 'GPCANet':
     more memory and cannot reach a really high number of layers.
 """
 
+exit(0)
+
 # optimizer and criterion
 optimizer = torch.optim.Adam(net.parameters(), args.lr, weight_decay=args.wd)
 criterion = torch.nn.CrossEntropyLoss()

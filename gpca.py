@@ -99,14 +99,17 @@ def gpca(data, nhid=64, nlayer=1, alpha=1., beta=0, act=nn.Identity()):
 
 def power_method_with_beta(A, x, y, alpha=1, beta=0.1, t=10):
     # here y should only include training labels, nxc one hot
-    inv_phi_times_x = x
-    yyt_normalizer = y.matmul(y.sum(dim=0).view(-1,1)) + 1e-6
-    for _ in range(t):
-        part1 = A.matmul(inv_phi_times_x)
-        if beta > 0:
-            part2 = y.matmul(y.t().matmul(inv_phi_times_x))/yyt_normalizer
-            part1 = (1-beta)*part1 + beta*part2
-        inv_phi_times_x = alpha/(1+alpha)*part1 + 1/(1+alpha)*x
+    with torch.no_grad():
+        inv_phi_times_x = x
+        yyt_normalizer = y.matmul(y.sum(dim=0).view(-1,1)) + 1e-6
+        for _ in range(t):
+            part1 = A.matmul(inv_phi_times_x)
+            if beta > 0:
+                part2 = y.matmul(y.t().matmul(inv_phi_times_x))/yyt_normalizer
+                part1 = (1-beta)*part1 + beta*part2
+            inv_phi_times_x = alpha/(1+alpha)*part1 + 1/(1+alpha)*x
+            torch.cuda.empty_cache()
+            
     return inv_phi_times_x
 
 class TabularDataset(Dataset):
