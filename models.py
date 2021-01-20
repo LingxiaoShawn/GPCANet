@@ -129,13 +129,18 @@ class GPCALayer(nn.Module):
             if self.nhid <= self.nin:
                 weight = eig_vec[:, -self.nhid:] #when 
                 #weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
+#             elif self.nhid <= 2*self.nin:
+#                 weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
             elif self.nhid <= 2*self.nin:
-                weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
+                eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
+                m = self.nhid % self.nin
+                weight = torch.cat([eig_vec, eig_vec1[:, -m:]], dim=-1)
+            elif self.nhid <= 3*self.nin:
+                eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
+                eig_val2, eig_vec2 = torch.symeig(invphi_x.t().mm(invphi_x), eigenvectors=True)
+                m = self.nhid % self.nin
+                weight = torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m:]], dim=-1)
             else:
-                # get more eigvectors
-                # 1. eigen of x.t times x
-                # 2. eigen of invphi_x.t times invphi_x
-                # 3. negative and positive eigenvectors for relu
                 raise ValueError('Larger hidden size is not supported yet.')
 
             # assign 
@@ -175,18 +180,17 @@ class GPCANet(nn.Module):
             return self.out_mlp(self.cache)
         
         for i, conv in enumerate(self.convs):
-#             pre_x = x
             x = conv(data, minibatch=minibatch)
-            x = self.relu(x)
-            x = self.dropout(x)
-#             if pre_x.shape() == x.shape():
-#                 x += pre_x
+            if not self.freeze_status:
+                # don't do this when use plain GPCANet
+                x = self.relu(x)
+                x = self.dropout(x)
             data.x = x
     
         if self.freeze_status:
             self.cache = data.x
-
-        out = self.out_mlp(data.x)
+        
+        out = self.out_mlp(self.dropout(data.x))
         data.x = original_x # restore 
 
         return out

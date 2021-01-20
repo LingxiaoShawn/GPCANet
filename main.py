@@ -23,7 +23,7 @@ parser.add_argument('--freeze', action='store_true', default=False, help='Whethe
 parser.add_argument('--act', type=str, default='Identity', help='Activitation function in torch.nn')
 # for minibatch
 parser.add_argument('--minibatch', action='store_true', default=False, help='Whether use minibatch to train')
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--num_partitions', type=int, default=15000)
 parser.add_argument('--num_workers', type=int, default=6)
 parser.add_argument('--eval_steps', type=int, default=5)
@@ -78,6 +78,18 @@ logging.info(description)
 data, dataset = load_data(args.data, args.adjmode)
 logging.debug(f"Data statistics:  #features {dataset.num_features}, #nodes {data.x.size(0)}, #class {dataset.num_classes}")
 
+# minibatch support
+if args.minibatch:
+    cluster_data = ClusterData(data, num_parts=args.num_partitions,
+                               recursive=False, save_dir=dataset.processed_dir)
+    dataloader = ClusterLoader(cluster_data, batch_size=args.batch_size,
+                               shuffle=True, num_workers=args.num_workers)
+    subgraph_loader = NeighborSampler(data.edge_index, sizes=[-1],
+                                      batch_size=1024, shuffle=False,
+                                      num_workers=args.num_workers)
+else:
+    dataloader = data
+
 # model 
 # problem: how to split generate embedding from logistic regression. 
 net = eval(args.model)(nfeat=data.num_features,
@@ -93,8 +105,10 @@ net = eval(args.model)(nfeat=data.num_features,
 
 # cuda 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+data.edge_index = None # delete to save memory
 data.to(device)
 net.to(device)
+
 # freeze the model and init the model for GPCANet
 if args.model == 'GPCANet':
     if args.freeze:
@@ -113,19 +127,6 @@ if args.model == 'GPCANet':
     and I still didn't see the goodness of init with GPCANet. Also training GPCANet needs 
     more memory and cannot reach a really high number of layers.
 """
-
-# minibatch support
-if args.minibatch:
-    data = data.to('cpu')
-    cluster_data = ClusterData(data, num_parts=args.num_partitions,
-                               recursive=False, save_dir=dataset.processed_dir)
-    dataloader = ClusterLoader(cluster_data, batch_size=args.batch_size,
-                               shuffle=True, num_workers=args.num_workers)
-    subgraph_loader = NeighborSampler(data.edge_index, sizes=[-1],
-                                      batch_size=1024, shuffle=False,
-                                      num_workers=args.num_workers)
-else:
-    dataloader = data
 
 # optimizer and criterion
 optimizer = torch.optim.Adam(net.parameters(), args.lr, weight_decay=args.wd)
