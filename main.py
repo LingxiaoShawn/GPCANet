@@ -27,6 +27,8 @@ parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--num_partitions', type=int, default=15000)
 parser.add_argument('--num_workers', type=int, default=6)
 parser.add_argument('--eval_steps', type=int, default=5)
+# adj normalization
+parser.add_argument('--adjmode', type=str, default='DA', help='{DA, DAD}')
 
 args = parser.parse_args()
 
@@ -73,8 +75,8 @@ logging.info("-"*50)
 logging.info(description)
 
 # later consider normalize when use it
-mode = 'DA'
-data, dataset = load_data(args.data, mode)
+data, dataset = load_data(args.data, args.adjmode)
+logging.debug(f"Data statistics:  #features {dataset.num_features}, #nodes {data.x.size(0)}, #class {dataset.num_classes}")
 
 # model 
 # problem: how to split generate embedding from logistic regression. 
@@ -86,7 +88,8 @@ net = eval(args.model)(nfeat=data.num_features,
                        alpha=args.alpha, 
                        beta=args.beta,
                        n_powers=args.powers,
-                       act=args.act)
+                       act=args.act,
+                       mode=args.adjmode)
 
 # cuda 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
