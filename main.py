@@ -3,6 +3,7 @@ import numpy as np
 from data import load_data
 from models import GPCANet, GCN
 from utils import *
+from torch_geometric.data import ClusterData, ClusterLoader, NeighborSampler
 
 # inputs
 parser = argparse.ArgumentParser()
@@ -20,6 +21,12 @@ parser.add_argument('--dropout', type=float, default=0, help='Dropout rate.')
 parser.add_argument('--powers', type=int, default=10, help='for approximaing inverse')
 parser.add_argument('--freeze', action='store_true', default=False, help='Whether freeze weights of GPCANet')
 parser.add_argument('--act', type=str, default='Identity', help='Activitation function in torch.nn')
+# for minibatch
+parser.add_argument('--minibatch', action='store_true', default=False, help='Whether use minibatch to train')
+parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--num_partitions', type=int, default=15000)
+parser.add_argument('--num_workers', type=int, default=6)
+parser.add_argument('--eval_steps', type=int, default=5)
 
 args = parser.parse_args()
 
@@ -66,14 +73,14 @@ logging.info("-"*50)
 logging.info(description)
 
 # later consider normalize when use it
-mode =  'DA'
-data = load_data(args.data, mode)
+mode = 'DA'
+data, dataset = load_data(args.data, mode)
 
 # model 
 # problem: how to split generate embedding from logistic regression. 
 net = eval(args.model)(nfeat=data.num_features,
                        nhid=args.nhid, 
-                       nclass=data.num_classes,
+                       nclass=dataset.num_classes,
                        nlayer=args.nlayer, 
                        dropout=args.dropout,
                        alpha=args.alpha, 
@@ -85,7 +92,6 @@ net = eval(args.model)(nfeat=data.num_features,
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 data.to(device)
 net.to(device)
-
 # freeze the model and init the model for GPCANet
 if args.model == 'GPCANet':
     if args.freeze:
@@ -105,11 +111,23 @@ if args.model == 'GPCANet':
     more memory and cannot reach a really high number of layers.
 """
 
-exit(0)
+# minibatch support
+if args.minibatch:
+    data = data.to('cpu')
+    cluster_data = ClusterData(data, num_parts=args.num_partitions,
+                               recursive=False, save_dir=dataset.processed_dir)
+    dataloader = ClusterLoader(cluster_data, batch_size=args.batch_size,
+                               shuffle=True, num_workers=args.num_workers)
+    subgraph_loader = NeighborSampler(data.edge_index, sizes=[-1],
+                                      batch_size=1024, shuffle=False,
+                                      num_workers=args.num_workers)
+else:
+    dataloader = data
 
 # optimizer and criterion
 optimizer = torch.optim.Adam(net.parameters(), args.lr, weight_decay=args.wd)
 criterion = torch.nn.CrossEntropyLoss()
+
 
 # saving 
 best_val_acc = 0
@@ -121,17 +139,20 @@ records, records_file = [], os.path.join(workspace, 'training_curves.npy')
 # training: need to split full-batch and mini-batch
 for epoch in range(args.epochs):
     try:
-        train_loss, train_acc = train(net, optimizer, criterion, data)
-        train_acc, val_acc, test_acc = evalulate(net, criterion, data)
-        logging.debug(f'Epoch: {epoch:02d}, '
-                      f'Loss: {train_loss:.4f}, '
-                      f'Train: {100 * train_acc:.2f}%, '
-                      f'Valid: {100 * val_acc:.2f}%,'
-                      f'Test: {100 * test_acc:.2f}% ')
-        if best_val_acc < val_acc:
-            best_val_acc = val_acc
-            torch.save(net.state_dict(), best_checkpoint)
-        records.append([train_loss, train_acc, val_acc, test_acc])
+        train_loss, train_acc = train(net, optimizer, criterion, dataloader, device, args.minibatch)
+        # full batch evaluation: set a frequency
+        if  epoch % args.eval_steps == 0:
+            torch.cuda.empty_cache()# use before full batch evaluation
+            train_acc, val_acc, test_acc = evaluate(net, criterion, data, device, args.minibatch)
+            logging.debug(f'Epoch: {epoch:02d}, '
+                          f'Loss: {train_loss:.4f}, '
+                          f'Train: {100 * train_acc:.4f}%, '
+                          f'Valid: {100 * val_acc:.4f}%,'
+                          f'Test: {100 * test_acc:.4f}% ')
+            if best_val_acc < val_acc:
+                best_val_acc = val_acc
+                torch.save(net.state_dict(), best_checkpoint)
+            records.append([epoch, train_loss, train_acc, val_acc, test_acc])
     except KeyboardInterrupt:
         break
         
@@ -140,10 +161,10 @@ np.save(records_file, np.array(records))
 
 # test 
 net.load_state_dict(torch.load(best_checkpoint))
-train_acc, val_acc, test_acc = evalulate(net, criterion, data)
+train_acc, val_acc, test_acc = evaluate(net, criterion, data)
 
 logging.info("-"*50)
-logging.info( f'! Train: {100 * train_acc:.2f}%, '
-                  f'Valid: {100 * val_acc:.2f}%, '
-                  f'Test: {100 * test_acc:.2f}% ')
+logging.info( f'! Train: {100 * train_acc:.5f}%, '
+                  f'Valid: {100 * val_acc:.5f}%, '
+                  f'Test: {100 * test_acc:.5f}% ')
 

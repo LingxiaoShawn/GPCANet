@@ -6,57 +6,35 @@ from torch_geometric.nn import GCNConv, SAGEConv
 from torch_sparse import SparseTensor
 
 class GCN(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, minibatch=False, **kwargs):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, **kwargs):
         super().__init__()
-        Conv = SAGEConv if minibatch else GCNConv
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
-            self.convs.append(Conv(nhid if i>0 else nfeat, 
-                                   nhid if i<nlayer-1 else nclass, cached=True))
+            self.convs.append(GCNConv(nhid if i>0 else nfeat, 
+                              nhid if i<nlayer-1 else nclass, normalize=False))
         self.dropout = dropout
 
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
 
-    def forward(self, data, **kwargs):
+    def forward(self, data, minibatch=False, **kwargs):
+        x = data.x
+        if minibatch:
+            A = to_normalized_sparsetensor(data.edge_index, x.size(0))
+        else:
+            A = data.adj
         # here can also do full batch, if gpu is not big enough, use cpu
-        x, edge_index = data.x, data.edge_index
         for i, conv in enumerate(self.convs[:-1]):
-            x = conv(x, edge_index)
+            x = conv(x, A)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.convs[-1](x, edge_index)
+        x = self.convs[-1](x, A)
         return x
     
-    def inference(self, x_all, subgraph_loader, device, **kwargs):
-        # here use sampling to achieve efficient full batch
-        self.eval()
-        with torch.no_grad():
-            for i, conv in enumerate(self.convs):
-                xs = []
-                for batch_size, n_id, adj in subgraph_loader:
-                    edge_index, _, size = adj.to(device)
-                    x = x_all[n_id].to(device)
-                    x_target = x[:size[1]]
-                    x = conv((x, x_target), edge_index)
-                    if i != len(self.convs) - 1:
-                        x = F.relu(x)
-                    xs.append(x.cpu())
-                x_all = torch.cat(xs, dim=0)
-        return x_all # cpu version
-    
-    def init(self, full_data):
-        """
-        Similar init used before. 
-        SAGECOnv is hard to init, the formulation is different. 
-        """
-        self.eval()
-        with torch.no_grad():
-            pass
-    
 def to_normalized_sparsetensor(edge_index, N, mode='DA'):
-    adj = SparseTensor(row=edge_index.row, col=edge_index.col, sparse_sizes=(N, N))
+    row, col = edge_index
+    adj = SparseTensor(row=row, col=col, sparse_sizes=(N, N))
     adj = adj.set_diag()
     deg = adj.sum(dim=1).to(torch.float)
     deg_inv_sqrt = deg.pow(-1)
@@ -64,7 +42,7 @@ def to_normalized_sparsetensor(edge_index, N, mode='DA'):
     return deg_inv_sqrt.view(-1,1)*adj
 
 class GPCALayer(nn.Module):
-    def __init__(self, nin, nout, alpha, beta, center=True, n_powers=50):
+    def __init__(self, nin, nout, alpha, beta, num_classes, center=True, n_powers=50):
         super().__init__()
         self.weight = nn.Parameter(torch.FloatTensor(nin, nout))
         self.bias = nn.Parameter(torch.FloatTensor(1, nout))
@@ -74,6 +52,7 @@ class GPCALayer(nn.Module):
         self.beta = beta
         self.center = center
         self.n_powers = n_powers
+        self.num_classes = num_classes
         # init default parameters
         self.reset_parameters()
     
@@ -107,7 +86,7 @@ class GPCALayer(nn.Module):
             Assume data.adj is SparseTensor and normalized
         """
         # inputs
-        n, c = data.x.size(0), data.num_classes
+        n, c = data.x.size(0), self.num_classes
         if minibatch:
             edge_index, x, y, train_mask = data.edge_index, data.x, data.y, data.train_mask
             A = to_normalized_sparsetensor(edge_index, n)
@@ -158,45 +137,46 @@ class GPCALayer(nn.Module):
 class GPCANet(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, alpha, beta, 
                  dropout=0, n_powers=10, center=True, act='Identity', 
-                 minibatch=False, **kwargs):
+                 **kwargs):
         super().__init__()
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
             self.convs.append(
-                GPCALayer(nhid if i>0 else nfeat, nhid, alpha, beta, center, n_powers))
+                GPCALayer(nhid if i>0 else nfeat, nhid, alpha, beta, nclass, center, n_powers))
             
         self.out_mlp = nn.Sequential(nn.Linear(nhid, nclass)) # consider increasing layers
         self.dropout = nn.Dropout(dropout)
         self.relu = getattr(nn,act)()
         self.cache = None # cannot be used when use batch training
-        self.freeze_status = False
-        self.minibatch = minibatch
+        self.freeze_status = False # only support full batch
     
     def freeze(self, requires_grad=False):
         self.freeze_status = not requires_grad
         for conv in self.convs:
             conv.freeze(requires_grad)
              
-    def forward(self, data, use_cache=False):
+    def forward(self, data, minibatch=False):
         # inputs
 #         A, x, y, train_mask = data.adj, data.x, data.y, data.train_mask
 #         n, c = data.num_nodes, data.num_classes
-        if self.minibatch:
-            use_cache = False
-        original_x = x
+        if minibatch:
+            self.freeze_status = False
+        original_x = data.x
         
-        if self.freeze_status and use_cache and self.cache is not None:
+        if self.freeze_status and self.cache is not None:
             return self.out_mlp(self.cache)
         
         for i, conv in enumerate(self.convs):
 #             pre_x = x
-            x = conv(data, minibatch=self.minibatch)
+            x = conv(data, minibatch=minibatch)
             x = self.relu(x)
             x = self.dropout(x)
 #             if pre_x.shape() == x.shape():
 #                 x += pre_x
             data.x = x
-        self.cache = data.x
+    
+        if self.freeze_status:
+            self.cache = data.x
 
         out = self.out_mlp(data.x)
         data.x = original_x # restore 

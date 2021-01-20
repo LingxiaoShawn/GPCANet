@@ -150,5 +150,5 @@ if __name__ == "__main__":
                 learning_rate=args.lr,
                 weight_decay=args.wd)
     mode =  'DA'
-    data = load_data(args.data, mode)
+    data,_ = load_data(args.data, mode)
     test_performance, valid_performance = model.run(data)

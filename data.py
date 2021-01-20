@@ -19,26 +19,19 @@ def load_ptg_data(data_name, mode='DA'):
     DATA_ROOT = 'dataset'
     dataset = Planetoid(os.path.join(DATA_ROOT, data_name), data_name)
     graph = dataset[0]
-    graph.num_classes = dataset.num_classes
     # masks
     graph.valid_mask = graph.val_mask
-    graph.train_idx = graph.train_mask.nonzero(as_tuple=False).squeeze()
-    graph.valid_idx = graph.val_mask.nonzero(as_tuple=False).squeeze()
-    graph.test_idx = graph.test_mask.nonzero(as_tuple=False).squeeze()
     # process adj
     adj = to_sparsetensor(graph)
     graph.adj = normalize_adj(adj, mode)
-    return graph
+    return graph, dataset
     
 def load_ogb_data(data_name, mode='DA'):
     # open graph benchmark data
     dataset = PygNodePropPredDataset(name='ogbn-'+data_name) 
     graph = dataset[0]
-    graph.num_classes = dataset.num_classes
     # create train mask
     split_idx = dataset.get_idx_split()
-    graph.train_idx, graph.valid_idx, graph.test_idx = split_idx["train"], split_idx["valid"], split_idx["test"] 
-    
     # Convert split indices to boolean masks and add them to `data`.
     for key, idx in split_idx.items():
         mask = torch.zeros(graph.num_nodes, dtype=torch.bool)
@@ -49,7 +42,7 @@ def load_ogb_data(data_name, mode='DA'):
     adj = to_sparsetensor(graph)
     graph.adj = normalize_adj(adj, mode)
     graph.y = graph.y.squeeze()
-    return graph
+    return graph, dataset
 
 def normalize_adj(adj, mode='DA'):
     deg = adj.sum(dim=1).to(torch.float)
