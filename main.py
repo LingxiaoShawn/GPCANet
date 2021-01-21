@@ -117,6 +117,7 @@ net = eval(args.model)(nfeat=data.num_features,
                        out_nlayer=2 if args.data in ['arxiv', 'products'] else 1)
 
 # cuda 
+args.gpu = min(args.gpu, torch.cuda.device_count()-1)
 device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 data.edge_index = None # delete to save memory
 data.to(device)
