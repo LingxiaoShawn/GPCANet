@@ -1,4 +1,4 @@
-import os, torch, logging, argparse, json
+import os, torch, logging, argparse, json, random
 import numpy as np
 from data import load_data
 from models import GPCANet, GCN
@@ -20,7 +20,9 @@ parser.add_argument('--log', type=str, default='debug', help='{info, debug}')
 parser.add_argument('--dropout', type=float, default=0, help='Dropout rate.')
 parser.add_argument('--powers', type=int, default=10, help='for approximaing inverse')
 parser.add_argument('--freeze', action='store_true', default=False, help='Whether freeze weights of GPCANet')
-parser.add_argument('--act', type=str, default='Identity', help='Activitation function in torch.nn')
+parser.add_argument('--act', type=str, default='ReLU', help='Activitation function in torch.nn')
+parser.add_argument('--seed', type=int, default=1010, help='Random seed to use')
+#TODO: gpu device
 # for minibatch
 parser.add_argument('--minibatch', action='store_true', default=False, help='Whether use minibatch to train')
 parser.add_argument('--batch_size', type=int, default=128)
@@ -32,6 +34,11 @@ parser.add_argument('--adjmode', type=str, default='DA', help='{DA, DAD}')
 
 args = parser.parse_args()
 
+# set random seed
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
+random.seed(args.seed)
+
 # out dir 
 OUT_PATH = "results/"
 if args.log == 'info':
@@ -40,7 +47,7 @@ if args.log == 'info':
 # info 
 description = f"D[{args.data}]-M[{args.model}]-h[{args.nhid}]" + \
               f"-l[{args.nlayer}]-a[{args.alpha}]-b[{args.beta}]" + \
-              f"-lr[{args.lr}]-wd[{args.wd}]-drop[{args.dropout}]-freeze[{args.freeze}]"
+              f"-lr[{args.lr}]-wd[{args.wd}]-drop[{args.dropout}]-freeze[{args.freeze}]-seed[{args.seed}]"
 
 # create work space
 workspace = os.path.join(OUT_PATH, description)
@@ -57,6 +64,9 @@ with open(args_file, 'w') as f:
 #     args.__dict__ = json.load(f)
 
 # create logging file
+LOG_PATH = "logs/"
+if not os.path.isdir(LOG_PATH):
+    os.makedirs(LOG_PATH)
 logging_file = f'log-{args.model}'
 if args.model == 'GPCANet':
     if args.nlayer == 1 and args.freeze:
@@ -65,8 +75,9 @@ if args.model == 'GPCANet':
         logging_file = 'log-GPCANet-Finetune'
     else:
         logging_file = 'log-GPCANet-Plain'
+logging_file += f'-{args.data}'
 logging_file += '.txt'
-
+logging_file = os.path.join(LOG_PATH, logging_file)
 # setup logger
 logging.basicConfig(format='%(message)s', filename=logging_file if args.log=='info' else None,
                     level=getattr(logging, args.log.upper())) 
@@ -101,7 +112,8 @@ net = eval(args.model)(nfeat=data.num_features,
                        beta=args.beta,
                        n_powers=args.powers,
                        act=args.act,
-                       mode=args.adjmode)
+                       mode=args.adjmode,
+                       out_nlayer=2 if args.data in ['arxiv', 'products'] else 1)
 
 # cuda 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -115,23 +127,13 @@ if args.model == 'GPCANet':
         net.freeze()
     net.init(data)
     
-"""
-    Here we can change GPCANet to embedder, and then we train logistic regression
-    on top of it. 
-    Pros: fast and scalable to large scale dataset, can use mini-batch to train LR which
-    converges a lot faster.
-    Cons: cannot modify embeddings based on the training loss.
-    This is achieved in gpca.py
-    -------------------------------
-    The current implementation uses init based way. Problem is that training is full-batch,
-    and I still didn't see the goodness of init with GPCANet. Also training GPCANet needs 
-    more memory and cannot reach a really high number of layers.
-"""
-
+# move data to cpu to save memory if minibatch
+if args.minibatch:
+    data = data.to('cpu')
+    
 # optimizer and criterion
 optimizer = torch.optim.Adam(net.parameters(), args.lr, weight_decay=args.wd)
 criterion = torch.nn.CrossEntropyLoss()
-
 
 # saving 
 best_val_acc = 0
@@ -146,14 +148,17 @@ for epoch in range(args.epochs):
         train_loss, train_acc = train(net, optimizer, criterion, dataloader, device, args.minibatch)
         # full batch evaluation: set a frequency
         if  epoch % args.eval_steps == 0:
-            torch.cuda.empty_cache()# use before full batch evaluation
+            if args.minibatch:
+                # clear cache for full batch operation
+                torch.cuda.empty_cache()# use before full batch evaluation
             train_acc, val_acc, test_acc = evaluate(net, criterion, data, device, args.minibatch)
-            logging.debug(f'Epoch: {epoch:02d}, '
+            logging.debug(f'Epoch: {epoch:04d}, '
                           f'Loss: {train_loss:.4f}, '
                           f'Train: {100 * train_acc:.4f}%, '
                           f'Valid: {100 * val_acc:.4f}%,'
                           f'Test: {100 * test_acc:.4f}% ')
-            if best_val_acc < val_acc:
+            if best_val_acc <= val_acc:
+                # do not use = to save running time
                 best_val_acc = val_acc
                 torch.save(net.state_dict(), best_checkpoint)
             records.append([epoch, train_loss, train_acc, val_acc, test_acc])
@@ -165,7 +170,7 @@ np.save(records_file, np.array(records))
 
 # test 
 net.load_state_dict(torch.load(best_checkpoint))
-train_acc, val_acc, test_acc = evaluate(net, criterion, data)
+train_acc, val_acc, test_acc = evaluate(net, criterion, data, device, args.minibatch)
 
 logging.info("-"*50)
 logging.info( f'! Train: {100 * train_acc:.5f}%, '

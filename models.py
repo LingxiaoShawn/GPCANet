@@ -149,17 +149,23 @@ class GPCALayer(nn.Module):
         
 class GPCANet(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, alpha, beta, 
-                 dropout=0, n_powers=10, center=True, act='Identity', mode='DA',
-                 **kwargs):
+                 dropout=0, n_powers=10, center=True, act='ReLU', 
+                 mode='DA', out_nlayer=1, **kwargs):
         super().__init__()
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
             self.convs.append(
                 GPCALayer(nhid if i>0 else nfeat, nhid, alpha, beta, nclass, center, n_powers, mode))
-            
-        self.out_mlp = nn.Sequential(nn.Linear(nhid, nclass)) # consider increasing layers
+         
         self.dropout = nn.Dropout(dropout)
         self.relu = getattr(nn,act)()
+        
+        if out_nlayer == 1:
+            self.out_mlp = nn.Sequential(nn.Linear(nhid, nclass)) 
+        else: 
+            self.out_mlp = nn.Sequential(nn.Linear(nhid, nhid), self.relu, 
+                                         self.dropout, nn.Linear(nhid, nclass))        
+        
         self.cache = None # cannot be used when use batch training
         self.freeze_status = False # only support full batch
 
@@ -174,11 +180,11 @@ class GPCANet(nn.Module):
 #         n, c = data.num_nodes, data.num_classes
         if minibatch:
             self.freeze_status = False
-        original_x = data.x
-        
+            
         if self.freeze_status and self.cache is not None:
-            return self.out_mlp(self.cache)
-        
+            return self.out_mlp(self.dropout(self.cache))
+
+        original_x = data.x
         for i, conv in enumerate(self.convs):
             x = conv(data, minibatch=minibatch)
             if not self.freeze_status:
@@ -193,19 +199,6 @@ class GPCANet(nn.Module):
         out = self.out_mlp(self.dropout(data.x))
         data.x = original_x # restore 
 
-        return out
-    
-    def inference(self, full_data):
-        self.eval()
-        with torch.no_grad():
-            original_x = full_data.x
-            for i, conv in enumerate(self.convs):
-                x = conv(full_data)
-                x = self.relu(x)
-                x = self.dropout(x)
-                full_data.x = x
-            out = self.out_mlp(full_data.x)
-            full_data.x = original_x
         return out
         
     def init(self, full_data):
