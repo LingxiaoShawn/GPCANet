@@ -138,7 +138,7 @@ criterion = torch.nn.CrossEntropyLoss()
 # saving 
 best_val_acc = 0
 best_checkpoint = os.path.join(workspace, 'best_checkpoint.pkl')
-last_checkpoint = os.path.join(workspace, 'last_checkpoint.pkl')
+# last_checkpoint = os.path.join(workspace, 'last_checkpoint.pkl')
 # record training curve
 records, records_file = [], os.path.join(workspace, 'training_curves.npy')
 
@@ -165,12 +165,15 @@ for epoch in range(args.epochs):
     except KeyboardInterrupt:
         break
         
-torch.save(net.state_dict(), last_checkpoint)
+# torch.save(net.state_dict(), last_checkpoint)
 np.save(records_file, np.array(records))
 
 # test 
 net.load_state_dict(torch.load(best_checkpoint))
 train_acc, val_acc, test_acc = evaluate(net, criterion, data, device, args.minibatch)
+
+# remove saved model to save space
+os.remove(best_checkpoint)
 
 logging.info("-"*50)
 logging.info( f'! Train: {100 * train_acc:.5f}%, '
