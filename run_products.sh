@@ -1,3 +1,5 @@
+
+gpu=0
 # Need to set eval_steps
 # Need to use two-layer MLP for out, also small amount of dropout helps
 # For products, beta doesn't work, so we remove it to save time. This should because of 
@@ -19,7 +21,7 @@ for seed in "${seeds[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
 for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 100 --seed $seed
+    python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu
 done 
 done 
 done
@@ -31,7 +33,7 @@ for seed in "${seeds[@]}"; do
 for hid in "${hiddens[@]}"; do
 for a in "${alphas[@]}"; do 
 for b in "${betas[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer 1 --lr 0.01 --wd 0 --nhid $hid --alpha $a --beta $b --freeze --epochs 1000 --seed $seed
+    python main.py --log info --data products --model GPCANet --nlayer 1 --lr 0.01 --wd 0 --nhid $hid --alpha $a --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu
 done
 done
 done
@@ -46,7 +48,7 @@ for seed in "${seeds[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
 for b in "${betas[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.01 --wd 0 --nhid $hid  --beta $b --freeze --epochs 1000 --seed $seed
+    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.01 --wd 0 --nhid $hid  --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu
 done
 done
 done
@@ -59,7 +61,7 @@ for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
 for b in "${betas[@]}"; do
 for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed
+    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed --gpu $gpu
 done
 done
 done

@@ -23,6 +23,7 @@ parser.add_argument('--freeze', action='store_true', default=False, help='Whethe
 parser.add_argument('--act', type=str, default='ReLU', help='Activitation function in torch.nn')
 parser.add_argument('--seed', type=int, default=1010, help='Random seed to use')
 #TODO: gpu device
+parser.add_argument('--gpu', type=int, default=0, help='Which gpu to use')
 # for minibatch
 parser.add_argument('--minibatch', action='store_true', default=False, help='Whether use minibatch to train')
 parser.add_argument('--batch_size', type=int, default=128)
@@ -40,7 +41,7 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 
 # out dir 
-OUT_PATH = "results/"
+OUT_PATH = f"results/gpu{args.gpu}"
 if args.log == 'info':
     OUT_PATH = os.path.join(OUT_PATH, 'benchmarks')
 
@@ -64,7 +65,7 @@ with open(args_file, 'w') as f:
 #     args.__dict__ = json.load(f)
 
 # create logging file
-LOG_PATH = "logs/"
+LOG_PATH = f"logs/gpu{args.gpu}"
 if not os.path.isdir(LOG_PATH):
     os.makedirs(LOG_PATH)
 logging_file = f'log-{args.model}'
@@ -116,7 +117,7 @@ net = eval(args.model)(nfeat=data.num_features,
                        out_nlayer=2 if args.data in ['arxiv', 'products'] else 1)
 
 # cuda 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
 data.edge_index = None # delete to save memory
 data.to(device)
 net.to(device)
