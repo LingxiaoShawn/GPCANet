@@ -33,7 +33,9 @@ for seed in "${seeds[@]}"; do
 for hid in "${hiddens[@]}"; do
 for a in "${alphas[@]}"; do 
 for b in "${betas[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer 1 --lr 0.01 --wd 0 --nhid $hid --alpha $a --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu
+for drop in "${dropouts[@]}"; do
+    python main.py --log info --data products --model GPCANet --nlayer 1 --lr 0.01 --wd 0 --nhid $hid --alpha $a --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu --dropout $drop
+done
 done
 done
 done
@@ -43,25 +45,33 @@ done
 # hiddens=(128)
 # layers=(2 3 5 10 15)
 # betas=(0 0.05 0.1 0.15)
+alphas=(0.5 1 5)  # current version
 # # ----
 for seed in "${seeds[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
+for a in "${alphas[@]}"; do 
 for b in "${betas[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.01 --wd 0 --nhid $hid  --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu
+for drop in "${dropouts[@]}"; do
+    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha $a --lr 0.01 --wd 0 --nhid $hid  --beta $b --freeze --epochs 1000 --seed $seed --gpu $gpu --dropout $drop
+done
+done
 done
 done
 done
 done
 
 # -------------------------- GPCANet + Finetune ------------------------
+alphas=(0.5 1 5) # current version
 # ----
 for seed in "${seeds[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
+for a in "${alphas[@]}"; do 
 for b in "${betas[@]}"; do
 for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha 1 --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed --gpu $gpu
+    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha $a --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed --gpu $gpu
+done
 done
 done
 done

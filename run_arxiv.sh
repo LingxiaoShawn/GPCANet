@@ -63,16 +63,19 @@ done
 
 # -------------------------- GPCANet + FineTune ------------------------
 layers=(2 3 5 10) # only tune beta to save time, fix alpha to be 1
+alphas=(0.5 1 5) # current version
 betas=(0 0.1 0.2) # later we can choose the best configuration of GPCANet of a and b and then run
 # ----
 for seed in "${seeds[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
 for drop in "${dropouts[@]}"; do
+for a in "${alphas[@]}"; do
 for b in "${betas[@]}"; do
     python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 500 --seed $seed --act ReLU --alpha 1 --beta $b --powers 5 --gpu $gpu
 done 
 done 
+done
 done
 done
 done
