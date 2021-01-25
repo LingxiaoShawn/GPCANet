@@ -14,11 +14,18 @@ class GCN(nn.Module):
                               nhid if i<nlayer-1 else nclass, normalize=False))
         self.dropout = dropout
         self.mode = mode
+        self.nclass = nclass
+        
+        # Fix them currently to reduce the number of experiments
+        # because init won't affect much. Can test increase beta later.
+        self.alpha = 1
+        self.beta = 0 
+        self.n_powers = 20
 
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
-
+            
     def forward(self, data, minibatch=False, **kwargs):
         x = data.x
         if minibatch:
@@ -33,6 +40,43 @@ class GCN(nn.Module):
         x = self.convs[-1](x, A)
         return x
     
+    def init(self, full_data, center=True, posneg=False, approximate=True, **kwargs):
+        # posneg = True is better for relu
+        with torch.no_grad():
+            # use GPCANet to init GCN
+            A, x, y = full_data.adj, full_data.x, full_data.y
+            if approximate:
+                for i, conv in enumerate(self.convs[:-1]):
+                    # use A as inv_phi
+                    x_ = x - x.mean(dim=0) if center else x
+                    eig_val0, eig_vec0 = torch.symeig(x_.t().mm(A).mm(x_), eigenvectors=True)
+                    if conv.out_channels <= (int(posneg)+1)*conv.in_channels:
+                        weight = torch.cat((eig_vec0[:, -conv.out_channels//2:], 
+                                     -eig_vec0[:, -conv.out_channels//2:]), dim=-1) \
+                               if posneg else eig_vec0[:, -conv.out_channels:] 
+                    elif conv.out_channels <= 2*(int(posneg)+1)*conv.in_channels:
+                        eig_val1, eig_vec1 = torch.symeig(x_.t().mm(x_), eigenvectors=True)
+                        m = conv.out_channels % ((int(posneg)+1)*conv.in_channels)
+                        weight = torch.cat((eig_vec0, -eig_vec0, eig_vec1[:,-m//2:], 
+                                            -eig_vec1[:,-m//2:]) , dim=-1) \
+                               if posneg else torch.cat((eig_vec0, eig_vec1[:,-m:]) , dim=-1)
+                    else:
+                        raise ValueError('Larger hidden size is not supported yet.')
+                    conv.weight.data = weight
+                    # pass to next layer
+                    x = conv(x, A)
+                    x = F.relu(x) if posneg else x            
+            else:
+                raise NotImplementedError("Power method is not supported yet.")
+#                 if self.beta > 0:
+#                     n, c = x.size(0), self.nclass
+#                     train_idx = full_data.train_mask.nonzero(as_tuple=False).squeeze()
+#                     y_train = None if y is None else SparseTensor(row=train_idx, 
+#                                    col=y.squeeze()[train_idx], sparse_sizes=(n, c))
+#                     yyt_normalizer = y_train.matmul(y_train.sum(dim=0).view(-1,1)) + 1e-8
+#                 for i, conv in enumerate(self.convs[:-1]):
+
+            
 def to_normalized_sparsetensor(edge_index, N, mode='DA'):
     row, col = edge_index
     adj = SparseTensor(row=row, col=col, sparse_sizes=(N, N))
@@ -45,6 +89,9 @@ def to_normalized_sparsetensor(edge_index, N, mode='DA'):
     if mode == 'DAD':
         return deg_inv_sqrt.view(-1, 1) * adj * deg_inv_sqrt.view(1, -1)
 
+    
+    
+# here maybe I should set center = False
 class GPCALayer(nn.Module):
     def __init__(self, nin, nout, alpha, beta, num_classes, center=True, n_powers=50, mode='DA'):
         super().__init__()
@@ -119,27 +166,30 @@ class GPCALayer(nn.Module):
             # AXW + bias
             return invphi_x.mm(self.weight) + self.bias
     
-    def init(self, full_data):
+    def init(self, full_data, posneg=False):
         """
         Init always use full batch, same as inference/test. 
         """
         with torch.no_grad():
             invphi_x, x = self.forward(full_data, True)
             eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
-            if self.nhid <= self.nin:
-                weight = eig_vec[:, -self.nhid:] #when 
-                #weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
-#             elif self.nhid <= 2*self.nin:
-#                 weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1)
-            elif self.nhid <= 2*self.nin:
+            if self.nhid <= (int(posneg)+1)*self.nin:
+                weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1) \
+                      if posneg else eig_vec[:, -self.nhid:] #when 
+
+            elif self.nhid <= 2*(int(posneg)+1)*self.nin:
                 eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
-                m = self.nhid % self.nin
-                weight = torch.cat([eig_vec, eig_vec1[:, -m:]], dim=-1)
-            elif self.nhid <= 3*self.nin:
+                m = self.nhid % ((int(posneg)+1)*self.nin)
+                weight = torch.cat([eig_vec, -eig_vec, eig_vec1[:, -m//2:], -eig_vec1[:, -m//2:]], dim=-1) \
+                      if posneg else torch.cat([eig_vec, eig_vec1[:, -m:]], dim=-1)
+                                
+            elif self.nhid <= 3*(int(posneg)+1)*self.nin:
                 eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
                 eig_val2, eig_vec2 = torch.symeig(invphi_x.t().mm(invphi_x), eigenvectors=True)
-                m = self.nhid % self.nin
-                weight = torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m:]], dim=-1)
+                m = self.nhid % ((int(posneg)+1)*self.nin)
+                weight = torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m//2:]
+                             -eig_vec, -eig_vec1, -eig_vec2[:, -m//2:]], dim=-1) \
+                      if posneg else torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m:]], dim=-1)
             else:
                 raise ValueError('Larger hidden size is not supported yet.')
 
@@ -153,14 +203,23 @@ class GPCANet(nn.Module):
                  mode='DA', out_nlayer=1, **kwargs):
         super().__init__()
         self.convs = torch.nn.ModuleList()
-        for i in range(nlayer):
+        for i in range(nlayer-1):
             self.convs.append(
                 GPCALayer(nhid if i>0 else nfeat, nhid, alpha, beta, nclass, center, n_powers, mode))
+        # last layer
+        self.convs.append(
+            GPCALayer(nhid, nclass if out_nlayer==0 else nhid, alpha, beta, nclass, center, n_powers, mode))
+        """
+        out_nlayer = 0 should only be used for non frezzed setting
+        """
          
         self.dropout = nn.Dropout(dropout)
         self.relu = getattr(nn,act)()
         
-        if out_nlayer == 1:
+        # fc layers
+        if out_nlayer == 0:
+            self.out_mlp = nn.Identity()
+        elif out_nlayer == 1:
             self.out_mlp = nn.Sequential(nn.Linear(nhid, nclass)) 
         else: 
             self.out_mlp = nn.Sequential(nn.Linear(nhid, nhid), self.relu, 
@@ -201,7 +260,7 @@ class GPCANet(nn.Module):
 
         return out
         
-    def init(self, full_data):
+    def init(self, full_data, posneg=False, **kwargs):
         """
         Init always use full batch, same as inference/test. 
         Btw, should we increase the scale of weight based on relu scale?
@@ -211,13 +270,9 @@ class GPCANet(nn.Module):
         with torch.no_grad():
             original_x = full_data.x
             for i, conv in enumerate(self.convs):
-#                 pre_x = x
-                full_data.x = conv.init(full_data) # init using GPCA
+                full_data.x = conv.init(full_data, posneg) # init using GPCA
                 #----- init without relu and dropout?
-#                 x = self.relu(x) 
+                x = self.relu(x) if posneg else x
 #                 x = self.dropout(x)
-#                 if pre_x.shape() == x.shape():
-#                     x += pre_x
-#                 full_data.x = x
             full_data.x = original_x # restore 
         
