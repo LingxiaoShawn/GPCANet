@@ -13,6 +13,7 @@ layers=(2 3 5 10 15) # prefer larger number of layers
 # when alpha = 0, it's pca init
 # --------------------------------------------------
 # use both ceter and posneg to init
+for seed in "${seeds[@]}"; do
 for data in "${datasets[@]}"; do
 for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
@@ -24,26 +25,27 @@ done
 done
 done
 done
+done
 
 
 ####################################################
 # arxiv
 dropouts=(0 0.2) # prefer a small dropout, not easy to overfit
 # --------------------------------------------------
-for layer in "${layers[@]}"; do
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
-    python main.py --log info --data arxiv --model GCN --lr 0.005 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu --init
-done 
-done 
-done
+# for layer in "${layers[@]}"; do
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
+#     python main.py --log info --data arxiv --model GCN --lr 0.005 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu --init
+# done 
+# done 
+# done
 
-# makeup
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
-    python main.py --log info --data arxiv --model GCN --lr 0.005 --wd 0 --nlayer 15 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu
-done 
-done 
+# # makeup
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
+#     python main.py --log info --data arxiv --model GCN --lr 0.005 --wd 0 --nlayer 15 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu
+# done 
+# done 
 
 
 
@@ -51,18 +53,18 @@ done
 # products
 dropouts=(0 0.1) # prefer small dropout
 hiddens=(128 256) # 256 is too large for memory, need 3090
+# --------------------------------------------------
+# for layer in "${layers[@]}"; do
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
+#     python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu --init
+# done 
+# done 
+# done
 
-for layer in "${layers[@]}"; do
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer $layer --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu --init
-done 
-done 
-done
-
-# makeup
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer 15 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu
-done 
-done 
+# # makeup
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
+#     python main.py --log info --data products --model GCN --minibatch --lr 0.001 --wd 0 --nlayer 15 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu
+# done 
+# done 

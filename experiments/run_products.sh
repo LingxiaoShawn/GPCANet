@@ -70,7 +70,7 @@ for hid in "${hiddens[@]}"; do
 for a in "${alphas[@]}"; do 
 for b in "${betas[@]}"; do
 for drop in "${dropouts[@]}"; do
-    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha $a --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed --gpu $gpu
+    python main.py --log info --data products --model GPCANet --nlayer $layer --alpha $a --lr 0.001 --wd 0 --nhid $hid  --beta $b --epochs 100 --minibatch --dropout $drop --act ReLU --seed $seed --gpu $gpu --powers 5
 done
 done
 done
