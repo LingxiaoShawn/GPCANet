@@ -19,7 +19,7 @@ for layer in "${layers[@]}"; do
 for hid in "${hiddens[@]}"; do
 for drop in "${dropouts[@]}"; do
 for wd in "${weightdecays[@]}"; do
-    python main.py --log info --data $data --model GCN --lr 0.001 --wd $wd --nlayer $layer --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu
+    python main.py --log info --data $data --model GCN --lr 0.001 --wd $wd --nlayer $layer --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu 
 done 
 done 
 done
