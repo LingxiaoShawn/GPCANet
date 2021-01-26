@@ -20,6 +20,7 @@ parser.add_argument('--log', type=str, default='debug', help='{info, debug}')
 parser.add_argument('--dropout', type=float, default=0, help='Dropout rate.')
 parser.add_argument('--powers', type=int, default=10, help='for approximaing inverse')
 parser.add_argument('--freeze', action='store_true', default=False, help='Whether freeze weights of GPCANet')
+parser.add_argument('--init', action='store_true', default=False, help='Init GCN')
 parser.add_argument('--act', type=str, default='ReLU', help='Activitation function in torch.nn')
 parser.add_argument('--seed', type=int, default=1010, help='Random seed to use')
 #TODO: gpu device
@@ -69,6 +70,8 @@ LOG_PATH = f"logs/gpu{args.gpu}"
 if not os.path.isdir(LOG_PATH):
     os.makedirs(LOG_PATH)
 logging_file = f'log-{args.model}'
+if args.init:
+    logging_file += 'Init'
 if args.model == 'GPCANet':
     if args.nlayer == 1 and args.freeze:
         logging_file = 'log-GPCA-Logistic'
@@ -128,6 +131,10 @@ if args.model == 'GPCANet':
     if args.freeze:
         net.freeze()
     net.init(data)
+
+# init GCN (combine with GPCANet later)
+if args.init:
+    net.init(data, center=True, posneg=True, approximate=True)  # use both ceter and posneg.maybe need ablation study later
     
 # move data to cpu to save memory if minibatch
 if args.minibatch:
