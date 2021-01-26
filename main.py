@@ -50,7 +50,7 @@ if args.log == 'info':
 description = f"D[{args.data}]-M[{args.model}]-h[{args.nhid}]" + \
               f"-l[{args.nlayer}]-a[{args.alpha}]-b[{args.beta}]" + \
               f"-lr[{args.lr}]-wd[{args.wd}]-drop[{args.dropout}]-freeze[{args.freeze}]-seed[{args.seed}]"
-
+print(description)
 # create work space
 workspace = os.path.join(OUT_PATH, description)
 if not os.path.isdir(workspace):

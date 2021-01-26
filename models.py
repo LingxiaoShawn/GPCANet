@@ -6,7 +6,7 @@ from torch_geometric.nn import GCNConv, SAGEConv
 from torch_sparse import SparseTensor
 
 class GCN(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, mode, **kwargs):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, mode, alpha=1, beta=0, n_powers=10, **kwargs):
         super().__init__()
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
@@ -18,9 +18,9 @@ class GCN(nn.Module):
         
         # Fix them currently to reduce the number of experiments
         # because init won't affect much. Can test increase beta later.
-        self.alpha = 1
-        self.beta = 0
-        self.n_powers = 10
+        self.alpha = alpha
+        self.beta = beta
+        self.n_powers = n_powers
 
     def reset_parameters(self):
         for conv in self.convs:
@@ -52,7 +52,7 @@ class GCN(nn.Module):
             for i, conv in enumerate(self.convs[:-1]):
                 x_ = x - x.mean(dim=0) if center else x
                 if approximate:
-                    # use A as inv_phi
+                    # use A as inv_phi, only support alpha=1 and beta=0
                     invphi_x = A.matmul(x_)
                 else:
                     invphi_x = approximate_invphi_x(A, x_, y_train, self.alpha, self.beta, self.n_powers)  
