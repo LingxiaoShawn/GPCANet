@@ -33,8 +33,13 @@ parser.add_argument('--num_workers', type=int, default=6)
 parser.add_argument('--eval_steps', type=int, default=5)
 # adj normalization
 parser.add_argument('--adjmode', type=str, default='DA', help='{DA, DAD}')
-
+# init settings
+parser.add_argument('--posneg', action='store_true', default=False, help='Whether use +- eigenvectors')
+parser.add_argument('--approx', action='store_true', default=False, help='Use truncated taylor to init GCN')
 args = parser.parse_args()
+# later change
+args.posneg=True
+args.approx=True
 
 # set random seed
 torch.manual_seed(args.seed)
@@ -45,11 +50,26 @@ random.seed(args.seed)
 OUT_PATH = f"results/gpu{args.gpu}"
 if args.log == 'info':
     OUT_PATH = os.path.join(OUT_PATH, 'benchmarks')
+    
+# create model name 
+model_name = ''
+if args.model == 'GPCANet':
+    if args.nlayer == 1 and args.freeze:
+        model_name = 'GPCA'
+    elif not args.freeze:
+        model_name = 'GPCANet-Finetune'
+    else:
+        model_name = 'GPCANet-Plain'
+else:
+    model_name = args.model
+    if args.init:
+        model_name += '-Init'
 
 # info 
-description = f"D[{args.data}]-M[{args.model}]-h[{args.nhid}]" + \
+description = f"D[{args.data}]-M[{model_name}]-h[{args.nhid}]" + \
               f"-l[{args.nlayer}]-a[{args.alpha}]-b[{args.beta}]" + \
-              f"-lr[{args.lr}]-wd[{args.wd}]-drop[{args.dropout}]-freeze[{args.freeze}]-seed[{args.seed}]"
+              f"-lr[{args.lr}]-wd[{args.wd}]-drop[{args.dropout}]-freeze[{args.freeze}]-seed[{args.seed}]" + \
+              f"-posneg[{args.posneg}]-approx[{args.approx}] "
 print(description)
 # create work space
 workspace = os.path.join(OUT_PATH, description)
@@ -69,19 +89,12 @@ with open(args_file, 'w') as f:
 LOG_PATH = f"logs/gpu{args.gpu}"
 if not os.path.isdir(LOG_PATH):
     os.makedirs(LOG_PATH)
-logging_file = f'log-{args.model}'
-if args.init:
-    logging_file += 'Init'
-if args.model == 'GPCANet':
-    if args.nlayer == 1 and args.freeze:
-        logging_file = 'log-GPCA-Logistic'
-    elif not args.freeze:
-        logging_file = 'log-GPCANet-Finetune'
-    else:
-        logging_file = 'log-GPCANet-Plain'
+logging_file = f'log-{model_name}'
 logging_file += f'-{args.data}'
 logging_file += '.txt'
 logging_file = os.path.join(LOG_PATH, logging_file)
+
+
 # setup logger
 logging.basicConfig(format='%(message)s', filename=logging_file if args.log=='info' else None,
                     level=getattr(logging, args.log.upper())) 
@@ -130,11 +143,14 @@ net.to(device)
 if args.model == 'GPCANet':
     if args.freeze:
         net.freeze()
-    net.init(data)
+        net.init(data, center=True, posneg=False)
+    else:
+        net.init(data, center=True, posneg=args.posneg)
 
 # init GCN (combine with GPCANet later)
 if args.init:
-    net.init(data, center=True, posneg=True, approximate=True)  # use both ceter and posneg.maybe need ablation study later
+    # use both ceter and posneg.maybe need ablation study later
+    net.init(data, center=True, posneg=args.posneg, approximate=args.approx) 
     
 # move data to cpu to save memory if minibatch
 if args.minibatch:
