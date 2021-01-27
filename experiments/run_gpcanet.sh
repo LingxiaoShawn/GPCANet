@@ -33,15 +33,15 @@ for b in "${betas[@]}"; do
 
 alphas=(10 20 30)
 for a in "${alphas[@]}"; do
-    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 1 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha a --powers 5
+    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 1 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha $a --powers 5
 done 
 alphas=(5 10 15)
 for a in "${alphas[@]}"; do
-    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 2 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha a --powers 5
+    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 2 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha $a --powers 5
 done 
 alphas=(3 5 10)
 for a in "${alphas[@]}"; do
-    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 3 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha a --powers 5
+    python main.py --log info --data $data --model GPCANet --lr 0.001 --wd $wd --nlayer 3 --nhid $hid --dropout $drop --epochs 1000 --seed $seed --gpu $gpu --beta $b --alpha $a --powers 5
 done 
 
 done 
@@ -57,26 +57,26 @@ done
 dropouts=(0 0.2) # prefer a small dropout, not easy to overfit
 # --------------------------------------------------
 
-for seed in "${seeds[@]}"; do
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
+# for seed in "${seeds[@]}"; do
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
 
-alphas=(10 20 30)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 1 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha a --powers 5
-done 
-alphas=(5 10 15)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 2 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha a --powers 5
-done 
-alphas=(3 5 10)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 3 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha a --powers 5
-done 
+# alphas=(10 20 30)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 1 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha $a --powers 5
+# done 
+# alphas=(5 10 15)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 2 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha $a --powers 5
+# done 
+# alphas=(3 5 10)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data arxiv --model GPCANet --lr 0.005 --wd 0 --nlayer 3 --nhid $hid --dropout $drop --epochs 500 --seed $seed --gpu $gpu  --alpha $a --powers 5
+# done 
 
-done 
-done
-done
+# done 
+# done
+# done
 
 
 ####################################################
@@ -84,23 +84,23 @@ done
 dropouts=(0 0.1) # prefer small dropout
 # --------------------------------------------------
 
-for seed in "${seeds[@]}"; do
-for hid in "${hiddens[@]}"; do
-for drop in "${dropouts[@]}"; do
+# for seed in "${seeds[@]}"; do
+# for hid in "${hiddens[@]}"; do
+# for drop in "${dropouts[@]}"; do
 
-alphas=(10 20 30)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 1 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha a --powers 5 --minibatch
-done 
-alphas=(5 10 15)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 2 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha a --powers 5 --minibatch
-done 
-alphas=(3 5 10)
-for a in "${alphas[@]}"; do
-    python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 3 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha a --powers 5 --minibatch
-done     
+# alphas=(10 20 30)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 1 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha $a --powers 5 --minibatch
+# done 
+# alphas=(5 10 15)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 2 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha $a --powers 5 --minibatch
+# done 
+# alphas=(3 5 10)
+# for a in "${alphas[@]}"; do
+#     python main.py --log info --data products --model GPCANet --lr 0.001 --wd 0 --nlayer 3 --nhid $hid --dropout $drop --epochs 100 --seed $seed --gpu $gpu  --alpha $a --powers 5 --minibatch
+# done     
     
-done 
-done 
-done
+# done 
+# done 
+# done
