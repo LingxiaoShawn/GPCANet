@@ -207,7 +207,8 @@ class GPCANet(nn.Module):
                 GPCALayer(nhid if i>0 else nfeat, nhid, alpha, beta, nclass, center, n_powers, mode))
         # last layer
         self.convs.append(
-            GPCALayer(nhid, nclass if out_nlayer==0 else nhid, alpha, beta, nclass, center, n_powers, mode))
+            GPCALayer(nhid if nlayer>1 else nfeat, 
+                      nclass if out_nlayer==0 else nhid, alpha, beta, nclass, center, n_powers, mode))
         """
         out_nlayer = 0 should only be used for non frezzed setting
         """

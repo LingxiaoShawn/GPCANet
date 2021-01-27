@@ -40,6 +40,8 @@ args = parser.parse_args()
 # later change
 args.posneg=True
 args.approx=True
+if args.beta>0 or args.alpha !=1:
+    args.approx=False
 
 # set random seed
 torch.manual_seed(args.seed)
