@@ -132,7 +132,7 @@ class GPCALayer(nn.Module):
         nn.init.xavier_uniform_(self.weight)
         nn.init.constant_(self.bias, 0) 
 
-    def forward(self, data, return_invphi_x=False, minibatch=False, center=False):
+    def forward(self, data, return_invphi_x=False, minibatch=False, center=True):
         """
             Assume data.adj is SparseTensor and normalized
         """
@@ -152,7 +152,9 @@ class GPCALayer(nn.Module):
             data.y_train = y_train
         else:
             y_train = data.y_train
-            
+        
+        if center:
+            x = x - x.mean(dim=0)
         # calculate inverse of phi times x
         if return_invphi_x:
             if center:
