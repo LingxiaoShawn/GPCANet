@@ -26,7 +26,7 @@ def load_ptg_data(data_name, mode='DA'):
     graph.adj = normalize_adj(adj, mode)
     return graph, dataset
     
-def load_ogb_data(data_name, mode='DA'):
+def load_ogb_data(data_name, mode='DA', downsampling=1):
     # open graph benchmark data
     dataset = PygNodePropPredDataset(name='ogbn-'+data_name) 
     graph = dataset[0]
@@ -34,6 +34,11 @@ def load_ogb_data(data_name, mode='DA'):
     split_idx = dataset.get_idx_split()
     # Convert split indices to boolean masks and add them to `data`.
     for key, idx in split_idx.items():
+        if key=='train' and downsampling < 1:
+            # downsampling training set 
+            perm = torch.randperm(idx.size(0))
+            k = int(len(idx) * downsampling)
+            idx = idx[perm[:k]]
         mask = torch.zeros(graph.num_nodes, dtype=torch.bool)
         mask[idx] = True
         graph[f'{key}_mask'] = mask
