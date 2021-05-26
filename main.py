@@ -29,7 +29,7 @@ parser.add_argument('--gpu', type=int, default=0, help='Which gpu to use')
 parser.add_argument('--minibatch', action='store_true', default=False, help='Whether use minibatch to train')
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--num_partitions', type=int, default=15000)
-parser.add_argument('--num_workers', type=int, default=6)
+parser.add_argument('--num_workers', type=int, default=0)
 parser.add_argument('--eval_steps', type=int, default=5)
 # adj normalization
 parser.add_argument('--adjmode', type=str, default='DA', help='{DA, DAD}')
