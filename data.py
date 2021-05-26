@@ -21,6 +21,8 @@ def load_ptg_data(data_name, mode='DA'):
     graph = dataset[0]
     # masks
     graph.valid_mask = graph.val_mask
+    # print(graph.val_mask.nonzero().squeeze().size())
+    # print(graph.test_mask.nonzero().squeeze().size())
     # process adj
     adj = to_sparsetensor(graph)
     graph.adj = normalize_adj(adj, mode)

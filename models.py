@@ -4,6 +4,103 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, SAGEConv
 
 from torch_sparse import SparseTensor
+from torch_sparse import spmm 
+from torch_scatter import scatter_softmax
+from torch_geometric.utils import remove_self_loops, add_self_loops
+
+
+class APPNP(nn.Module):
+    def __init__(self, nfeat, nhid, nclass, dropout=0, alpha=1, n_powers=10, **kwargs):
+        super().__init__()
+        self.lin1 = nn.Linear(nfeat, nhid)
+        self.lin2 = nn.Linear(nhid, nclass)
+
+        self.dropout = dropout
+        self.alpha = alpha
+        self.n_powers = n_powers
+
+    def reset_parameters(self):
+        self.lin1.reset_parameters()
+        self.lin2.reset_parameters()
+
+    def forward(self, data, minibatch=False, **kwargs):
+        # inputs
+        if minibatch:
+            edge_index, x = data.edge_index, data.x
+            A = to_normalized_sparsetensor(edge_index, data.x.size(0), 'DA')
+        else:    
+            A, x = data.adj, data.x
+
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.lin2(x)
+        return approximate_invphi_x(A, x, None, self.alpha, 0, self.n_powers)
+
+class GAT(nn.Module):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, nhead=8, **kwargs):
+        super().__init__()
+        self.convs = torch.nn.ModuleList()
+        for i in range(nlayer-1):
+            self.convs.append(GATConv(nhid if i>0 else nfeat, nhid, nhead, dropout))
+        self.convs.append(GATConv(nhid, nclass, 1, dropout))
+        self.dropout = dropout
+
+    def forward(self, data, **kwargs):
+        # here can also do full batch, if gpu is not big enough, use cpu
+        x, edge_index = data.x, data.edge_index
+
+        for i, conv in enumerate(self.convs[:-1]):
+            x = conv(x, edge_index)
+            x = F.elu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.convs[-1](x, edge_index)
+        return x   
+
+    def init(self, full_data, center=True, posneg=False, **kwargs):
+        # Here I can only use PCA initialization
+        pass
+
+class GATConv(nn.Module):
+    def __init__(self, in_features, out_features, heads, dropout):
+        super().__init__()
+        assert out_features % heads == 0
+        out_perhead = out_features // heads
+        self.graph_atts = nn.ModuleList([GraphAttConvOneHead(
+               in_features, out_perhead, dropout=dropout) for _ in range(heads)])
+
+    def forward(self, x, edge_index):
+        output = torch.cat([att(x, edge_index) for att in self.graph_atts], dim=1)
+        return output
+
+class GraphAttConvOneHead(nn.Module):
+    def __init__(self, in_features, out_features, dropout=0, alpha=0.2):
+        super().__init__()
+        self.weight = nn.Parameter(torch.zeros(size=(in_features, out_features)))
+        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features)))
+        self.dropout = nn.Dropout(dropout)
+        self.leakyrelu = nn.LeakyReLU(alpha)
+        # init 
+        nn.init.xavier_uniform_(self.weight.data, gain=nn.init.calculate_gain('relu')) # look at here
+        nn.init.xavier_uniform_(self.a.data, gain=nn.init.calculate_gain('relu'))
+         
+    def forward(self, x, edge_index):
+        n = len(x)
+        edge_index, _ = remove_self_loops(edge_index)
+        edge_index, _ = add_self_loops(edge_index, num_nodes=n)
+        h = torch.mm(x, self.weight) 
+        # Self-attention on the nodes - Shared attention mechanism
+        edge_h = torch.cat((h[edge_index[0]], h[edge_index[1]]), dim=1).t() # edge_h: 2*D x E
+        # do softmax for each row, this need index of each row, and for each row do softmax over it
+        alpha = self.leakyrelu(self.a.mm(edge_h).squeeze()) # E
+        alpha = scatter_softmax(alpha, edge_index[0])
+        output = spmm(edge_index, alpha, n, n, h) # h_prime: N x out
+        return output
+
+    def init(self, full_data, center=True, posneg=False):
+        pass
+
+
 
 class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, dropout, mode, alpha=1, beta=0, n_powers=10, **kwargs):

@@ -1,7 +1,7 @@
 import os, torch, logging, argparse, json, random
 import numpy as np
 from data import load_data
-from models import GPCANet, GCN
+from models import GPCANet, GCN, GAT, APPNP
 from utils import *
 from torch_geometric.data import ClusterData, ClusterLoader, NeighborSampler
 
@@ -9,7 +9,7 @@ from torch_geometric.data import ClusterData, ClusterLoader, NeighborSampler
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='arxiv', help='{cora, pubmed, citeseer, arxiv}.')
 parser.add_argument('--nhid', type=int, default=128, help='Number of hidden units.')
-parser.add_argument('--nlayer', type=int, default=3, help='Number of layers, works for Deep model.')
+parser.add_argument('--nlayer', type=int, default=2, help='Number of layers, works for Deep model.')
 parser.add_argument('--alpha', type=float, default=1, help='GPCA trade-off')
 parser.add_argument('--beta', type=float, default=0, help='Supervised GPCA trade-off')
 parser.add_argument('--model', type=str, default='GPCANet', help='{GCN, GPCA}')
@@ -97,7 +97,9 @@ logging_file += '.txt'
 logging_file = os.path.join(LOG_PATH, logging_file)
 
 
-# setup logger
+#setup logger
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 logging.basicConfig(format='%(message)s', filename=logging_file if args.log=='info' else None,
                     level=getattr(logging, args.log.upper())) 
 
@@ -137,7 +139,10 @@ net = eval(args.model)(nfeat=data.num_features,
 # cuda 
 args.gpu = min(args.gpu, torch.cuda.device_count()-1)
 device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
-data.edge_index = None # delete to save memory
+if args.model != 'GAT':
+    data.edge_index = None  # delete to save memory
+else:
+    data.adj = None
 data.to(device)
 net.to(device)
 
