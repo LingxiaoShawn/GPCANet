@@ -11,18 +11,20 @@ from torch_geometric.data import NeighborSampler
 
 
 class APPNP(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, dropout=0, alpha=1, n_powers=10, **kwargs):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout=0, alpha=1, n_powers=10, **kwargs):
         super().__init__()
-        self.lin1 = nn.Linear(nfeat, nhid)
-        self.lin2 = nn.Linear(nhid, nclass)
+        self.layers = nn.ModuleList()
+        for i in range(nlayer-1):
+            self.layers.append(nn.Linear(nfeat if i==0 else nhid, nhid))
+        self.layers.append(nn.Linear(nhid, nclass))
 
         self.dropout = dropout
         self.alpha = alpha
         self.n_powers = n_powers
 
     def reset_parameters(self):
-        self.lin1.reset_parameters()
-        self.lin2.reset_parameters()
+        for layer in self.layers:
+            layer.reset_parameters()
 
     def forward(self, data, minibatch=False, **kwargs):
         # inputs
@@ -32,10 +34,11 @@ class APPNP(nn.Module):
         else:    
             A, x = data.adj, data.x
 
+        for layer in self.layers[:-1]:
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = F.relu(layer(x))
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.lin2(x)
+        x = self.layers[-1](x)
         return approximate_invphi_x(A, x, None, self.alpha, 0, self.n_powers)
 
     
@@ -86,8 +89,9 @@ class GAT(nn.Module):
                                           batch_size=batch_size, shuffle=False,
                                           num_workers=num_workers)
         all_x = full_data.x
-        all_x = self.in_linear(all_x)
-        all_x = F.elu(all_x)
+        all_x = self.in_linear(all_x.to(device))
+        all_x = F.elu(all_x).cpu()
+
         for i, conv in enumerate(self.convs):
             xs = []
             for batch_size, n_id, adj in subgraph_loader:
