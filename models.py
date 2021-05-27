@@ -7,6 +7,7 @@ from torch_sparse import SparseTensor
 from torch_sparse import spmm 
 from torch_scatter import scatter_softmax
 from torch_geometric.utils import remove_self_loops, add_self_loops
+from torch_geometric.data import NeighborSampler
 
 
 class APPNP(nn.Module):
@@ -45,10 +46,13 @@ class GAT(nn.Module):
             self.convs.append(GATConv(nhid if i>0 else nfeat, nhid, nhead, dropout))
         self.convs.append(GATConv(nhid, nclass, 1, dropout))
         self.dropout = dropout
+        self.nlayer = nlayer
 
     def forward(self, data, **kwargs):
         # here can also do full batch, if gpu is not big enough, use cpu
         x, edge_index = data.x, data.edge_index
+        edge_index, _ = remove_self_loops(edge_index)
+        edge_index, _ = add_self_loops(edge_index, num_nodes=len(x))
 
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
@@ -57,8 +61,28 @@ class GAT(nn.Module):
         x = self.convs[-1](x, edge_index)
         return x   
 
+    def inference(self, full_data, device, batch_size=2**14, num_workers=8):
+        # For products which is really large, we need to use mini-batch to do inference,
+        # This is very slow
+        subgraph_loader = NeighborSampler(full_data.edge_index, 
+                                          node_idx=None, sizes=[-1],
+                                          batch_size=batch_size, shuffle=False,
+                                          num_workers=num_workers)
+        all_x = full_data.x
+        for i, conv in enumerate(self.convs):
+            xs = []
+            for batch_size, n_id, adj in subgraph_loader:
+                edge_index, _, size = adj.to(device)
+                x = all_x[n_id].to(device)
+                x = conv(x, edge_index)[:size[1]]
+                if i < self.nlayer - 1:
+                    x = F.elu(x)            
+                xs.append(x.cpu())
+            all_x = torch.cat(xs, dim=0)
+        return all_x
+
     def init(self, full_data, center=True, posneg=False, **kwargs):
-        # Here I can only use PCA initialization
+        # only support full batch init now 
         pass
 
 class GATConv(nn.Module):
@@ -77,7 +101,8 @@ class GraphAttConvOneHead(nn.Module):
     def __init__(self, in_features, out_features, dropout=0, alpha=0.2):
         super().__init__()
         self.weight = nn.Parameter(torch.zeros(size=(in_features, out_features)))
-        self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features)))
+        # self.a = nn.Parameter(torch.zeros(size=(1, 2*out_features)))
+        self.a = nn.Parameter(torch.zeros(size=(1, 2*in_features)))
         self.dropout = nn.Dropout(dropout)
         self.leakyrelu = nn.LeakyReLU(alpha)
         # init 
@@ -86,19 +111,21 @@ class GraphAttConvOneHead(nn.Module):
          
     def forward(self, x, edge_index):
         n = len(x)
-        edge_index, _ = remove_self_loops(edge_index)
-        edge_index, _ = add_self_loops(edge_index, num_nodes=n)
-        h = torch.mm(x, self.weight) 
+        # h = torch.mm(x, self.weight) 
+        h = x
         # Self-attention on the nodes - Shared attention mechanism
         edge_h = torch.cat((h[edge_index[0]], h[edge_index[1]]), dim=1).t() # edge_h: 2*D x E
         # do softmax for each row, this need index of each row, and for each row do softmax over it
         alpha = self.leakyrelu(self.a.mm(edge_h).squeeze()) # E
         alpha = scatter_softmax(alpha, edge_index[0])
         output = spmm(edge_index, alpha, n, n, h) # h_prime: N x out
+        output = output.mm(self.weight)
         return output
 
     def init(self, full_data, center=True, posneg=False):
-        pass
+        with torch.no_grad():
+            pass
+
 
 
 

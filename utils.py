@@ -8,9 +8,18 @@ def train(net, optimizer, criterion, data, device, minibatch):
 def evaluate(net, criterion, data, device, minibatch):
     # modify later, currently we only evaluate in full batch mode
     if minibatch:
-        data.to(device)
-        results = evaluate_fullbatch(net, criterion, data)
-        data.to('cpu')
+        if hasattr(net, 'inference'):
+            with torch.no_grad():
+                net.eval()
+                output = net.inference(data, device)
+                train_acc = accuracy(output[data.train_mask], data.y[data.train_mask])
+                val_acc = accuracy(output[data.valid_mask], data.y[data.valid_mask])
+                test_acc = accuracy(output[data.test_mask], data.y[data.test_mask])
+            return train_acc.item(), val_acc.item(), test_acc.item()
+        else:
+            data.to(device)
+            results = evaluate_fullbatch(net, criterion, data)
+            data.to('cpu')
     else:
         results = evaluate_fullbatch(net, criterion, data)
     return results
