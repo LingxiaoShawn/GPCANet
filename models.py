@@ -38,29 +38,47 @@ class APPNP(nn.Module):
         x = self.lin2(x)
         return approximate_invphi_x(A, x, None, self.alpha, 0, self.n_powers)
 
+    
 class GAT(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, nhead=8, **kwargs):
+    def __init__(self, nfeat, nhid, nclass, nlayer, dropout, nhead=4, **kwargs):
         super().__init__()
+        self.in_linear = nn.Linear(nfeat, nhid)
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer-1):
-            self.convs.append(GATConv(nhid if i>0 else nfeat, nhid, nhead, dropout))
+            # self.convs.append(GATConv(nhid if i>0 else nfeat, nhid, nhead, dropout))
+            self.convs.append(GATConv(nhid, nhid, nhead, dropout))
         self.convs.append(GATConv(nhid, nclass, 1, dropout))
         self.dropout = dropout
         self.nlayer = nlayer
+        print(self.nlayer)
 
     def forward(self, data, **kwargs):
         # here can also do full batch, if gpu is not big enough, use cpu
         x, edge_index = data.x, data.edge_index
-        edge_index, _ = remove_self_loops(edge_index)
-        edge_index, _ = add_self_loops(edge_index, num_nodes=len(x))
-
+        # edge_index, _ = remove_self_loops(edge_index)
+        # edge_index, _ = add_self_loops(edge_index, num_nodes=len(x))
+        x = self.in_linear(x)
+        x = F.elu(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
         for i, conv in enumerate(self.convs[:-1]):
             x = conv(x, edge_index)
             x = F.elu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.convs[-1](x, edge_index)
-        return x   
+        return x 
 
+    def init(self, full_data, center=True, posneg=False, **kwargs):
+        # now only support full batch init
+        self.eval()
+        with torch.no_grad():  
+            x, edge_index = full_data.x, full_data.edge_index
+            x = self.in_linear(x)
+            x = F.elu(x)
+            for i, conv in enumerate(self.convs[:-1]):
+                x = conv.init(x, edge_index, posneg=posneg)
+                x = F.elu(x)
+            x = self.convs[-1].init(x, edge_index, posneg=posneg)
+    
     def inference(self, full_data, device, batch_size=2**14, num_workers=8):
         # For products which is really large, we need to use mini-batch to do inference,
         # This is very slow
@@ -69,6 +87,8 @@ class GAT(nn.Module):
                                           batch_size=batch_size, shuffle=False,
                                           num_workers=num_workers)
         all_x = full_data.x
+        all_x = self.in_linear(all_x)
+        all_x = F.elu(all_x)
         for i, conv in enumerate(self.convs):
             xs = []
             for batch_size, n_id, adj in subgraph_loader:
@@ -80,10 +100,6 @@ class GAT(nn.Module):
                 xs.append(x.cpu())
             all_x = torch.cat(xs, dim=0)
         return all_x
-
-    def init(self, full_data, center=True, posneg=False, **kwargs):
-        # only support full batch init now 
-        pass
 
 class GATConv(nn.Module):
     def __init__(self, in_features, out_features, heads, dropout):
@@ -97,6 +113,12 @@ class GATConv(nn.Module):
         output = torch.cat([att(x, edge_index) for att in self.graph_atts], dim=1)
         return output
 
+    def init(self, x, edge_index, posneg=False, **kwargs):
+        self.eval() 
+        with torch.no_grad():
+            output = torch.cat([att.init(x, edge_index, posneg=posneg) for att in self.graph_atts], dim=1)
+        return output
+
 class GraphAttConvOneHead(nn.Module):
     def __init__(self, in_features, out_features, dropout=0, alpha=0.2):
         super().__init__()
@@ -108,8 +130,11 @@ class GraphAttConvOneHead(nn.Module):
         # init 
         nn.init.xavier_uniform_(self.weight.data, gain=nn.init.calculate_gain('relu')) # look at here
         nn.init.xavier_uniform_(self.a.data, gain=nn.init.calculate_gain('relu'))
+        
+        self.nin = in_features
+        self.nhid = out_features
          
-    def forward(self, x, edge_index):
+    def forward(self, x, edge_index, return_invphi_x=False):
         n = len(x)
         # h = torch.mm(x, self.weight) 
         h = x
@@ -119,12 +144,39 @@ class GraphAttConvOneHead(nn.Module):
         alpha = self.leakyrelu(self.a.mm(edge_h).squeeze()) # E
         alpha = scatter_softmax(alpha, edge_index[0])
         output = spmm(edge_index, alpha, n, n, h) # h_prime: N x out
+        if return_invphi_x:
+            return output, h
         output = output.mm(self.weight)
         return output
 
-    def init(self, full_data, center=True, posneg=False):
+    def init(self, x, edge_index, posneg=False, **kwargs):
+        self.eval() 
         with torch.no_grad():
-            pass
+            invphi_x, x = self.forward(x, edge_index, return_invphi_x=True)
+            eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)
+            if self.nhid <= (int(posneg)+1)*self.nin:
+                weight = torch.cat([eig_vec[:,-self.nhid//2:], -eig_vec[:,-self.nhid//2:]], dim=-1) \
+                      if posneg else eig_vec[:, -self.nhid:] #when 
+
+            elif self.nhid <= 2*(int(posneg)+1)*self.nin:
+                eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
+                m = self.nhid % ((int(posneg)+1)*self.nin)
+                weight = torch.cat([eig_vec, -eig_vec, eig_vec1[:, -m//2:], -eig_vec1[:, -m//2:]], dim=-1) \
+                      if posneg else torch.cat([eig_vec, eig_vec1[:, -m:]], dim=-1)
+                                
+            elif self.nhid <= 3*(int(posneg)+1)*self.nin:
+                eig_val1, eig_vec1 = torch.symeig(x.t().mm(x), eigenvectors=True)
+                eig_val2, eig_vec2 = torch.symeig(invphi_x.t().mm(invphi_x), eigenvectors=True)
+                m = self.nhid % ((int(posneg)+1)*self.nin)
+                weight = torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m//2:]
+                             -eig_vec, -eig_vec1, -eig_vec2[:, -m//2:]], dim=-1) \
+                      if posneg else torch.cat([eig_vec, eig_vec1, eig_vec2[:, -m:]], dim=-1)
+            else:
+                raise ValueError('Larger hidden size is not supported yet.')
+
+            # assign 
+            self.weight.data = weight
+        return invphi_x.mm(self.weight)
 
 
 
@@ -166,6 +218,7 @@ class GCN(nn.Module):
     
     def init(self, full_data, center=True, posneg=False, approximate=True, **kwargs):
         # posneg = True is better for relu
+        self.eval() 
         with torch.no_grad():
             # use GPCANet to init GCN
             A, x, y = full_data.adj, full_data.x, full_data.y
@@ -294,6 +347,7 @@ class GPCALayer(nn.Module):
         """
         Init always use full batch, same as inference/test. 
         """
+        self.eval() 
         with torch.no_grad():
             invphi_x, x = self.forward(full_data, return_invphi_x=True, center=center)
             eig_val, eig_vec = torch.symeig(x.t().mm(invphi_x), eigenvectors=True)

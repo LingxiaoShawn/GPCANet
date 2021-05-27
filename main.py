@@ -40,6 +40,9 @@ args = parser.parse_args()
 # later change
 args.posneg=True
 args.approx=True
+
+
+# args.posneg=False
 if args.beta>0 or args.alpha !=1:
     args.approx=False
 
@@ -150,13 +153,16 @@ net.to(device)
 if args.model == 'GPCANet':
     if args.freeze:
         net.freeze()
+        # net.eval()
         net.init(data, center=True, posneg=False)
     else:
+        # net.eval()
         net.init(data, center=True, posneg=args.posneg)
 
 # init GCN (combine with GPCANet later)
 if args.init:
     # use both ceter and posneg.maybe need ablation study later
+    # net.eval()
     net.init(data, center=True, posneg=args.posneg, approximate=args.approx) 
     
 # move data to cpu to save memory if minibatch
