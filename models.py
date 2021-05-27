@@ -50,7 +50,6 @@ class GAT(nn.Module):
         self.convs.append(GATConv(nhid, nclass, 1, dropout))
         self.dropout = dropout
         self.nlayer = nlayer
-        print(self.nlayer)
 
     def forward(self, data, **kwargs):
         # here can also do full batch, if gpu is not big enough, use cpu
