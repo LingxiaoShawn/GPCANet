@@ -1,8 +1,8 @@
 gpu=0
 
 seeds=(1010 0105 15213 15217 9195)
-hiddens=(128 256)
-layers=(2 3 5 10)
+hiddens=(64) #128 256)
+layers=(2 3) #5 10)
 # -------------------------- GAT Cora CiteSeer PubMed -------------------------
 datasets=(cora citeseer pubmed)
 weightdecays=('5e-4' '5e-3')

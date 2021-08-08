@@ -183,6 +183,9 @@ class GraphAttConvOneHead(nn.Module):
 class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, nlayer, dropout, mode, alpha=1, beta=0, n_powers=10, **kwargs):
         super().__init__()
+        SAGE=True
+        if SAGE:
+            GCNConv = SAGEConv
         self.convs = torch.nn.ModuleList()
         for i in range(nlayer):
             self.convs.append(GCNConv(nhid if i>0 else nfeat, 

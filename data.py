@@ -4,7 +4,6 @@ from torch_geometric.datasets import Planetoid
 from torch_sparse import SparseTensor
 from torch_geometric.utils import to_undirected
 from torch_geometric.utils import remove_self_loops, add_self_loops
-
 """
 Here we don't do any normalization for input node features
     graph.adj: SparseTensor (use matmul) 
