@@ -5,6 +5,8 @@ from models import GPCANet, GCN, GAT, APPNP
 from utils import *
 from torch_geometric.data import ClusterData, ClusterLoader, NeighborSampler
 
+import time
+
 # inputs
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type=str, default='arxiv', help='{cora, pubmed, citeseer, arxiv, products}.')
@@ -160,10 +162,15 @@ if args.model == 'GPCANet':
         net.init(data, center=True, posneg=args.posneg)
 
 # init GCN (combine with GPCANet later)
+
+start = time.time()
 if args.init:
     # use both ceter and posneg.maybe need ablation study later
     # net.eval()
     net.init(data, center=True, posneg=args.posneg, approximate=args.approx) 
+
+init_time = time.time() - start 
+logging.debug(f'initialization time: {init_time:.3f} seconds')
     
 # move data to cpu to save memory if minibatch
 if args.minibatch:
@@ -182,8 +189,13 @@ records, records_file = [], os.path.join(workspace, 'training_curves.npy')
 
 # training: need to split full-batch and mini-batch
 for epoch in range(args.epochs):
+    
     try:
+        run_times = []
+        start = time.time()
         train_loss, train_acc = train(net, optimizer, criterion, dataloader, device, args.minibatch)
+        training_time = time.time() - start
+        run_times.append(training_time)
         # full batch evaluation: set a frequency
         if  epoch % args.eval_steps == 0:
             if args.minibatch:
@@ -195,7 +207,8 @@ for epoch in range(args.epochs):
                           f'Loss: {train_loss:.4f}, '
                           f'Train: {100 * train_acc:.4f}%, '
                           f'Valid: {100 * val_acc:.4f}%,'
-                          f'Test: {100 * test_acc:.4f}% ')
+                          f'Test: {100 * test_acc:.4f}% ,'
+                          f'Seconds: {sum(run_times) / len(run_times):.4f}')
             if best_val_acc <= val_acc:
                 # do not use = to save running time
                 best_val_acc = val_acc
