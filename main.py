@@ -7,7 +7,7 @@ from torch_geometric.data import ClusterData, ClusterLoader, NeighborSampler
 
 # inputs
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type=str, default='arxiv', help='{cora, pubmed, citeseer, arxiv}.')
+parser.add_argument('--data', type=str, default='arxiv', help='{cora, pubmed, citeseer, arxiv, products}.')
 parser.add_argument('--nhid', type=int, default=128, help='Number of hidden units.')
 parser.add_argument('--nlayer', type=int, default=2, help='Number of layers, works for Deep model.')
 parser.add_argument('--alpha', type=float, default=1, help='GPCA trade-off')
