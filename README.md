@@ -1,5 +1,5 @@
 # GPCANet
-Code for paper [Connecting Graph Convolutional Networks and Graph-Regularized PCA](https://arxiv.org/abs/2006.12294)
+Code for paper [Connecting Graph Convolutional Networks and Graph-Regularized PCA]
 
 **Supported datasets**: `cora`, `citeseer`, `pubmed`, `arxiv`, `products`.   
 The last two are from OGB datasets. And `products` dataset needs `--minibatch` option. 
